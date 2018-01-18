@@ -11,7 +11,7 @@
 #include <GLFW/glfw3.h>
 
 struct GLFWWindowDestroyer {
-	auto operator()(GLFWwindow* ptr) -> void;
+	auto operator()(GLFWwindow* ptr) noexcept -> void;
 };
 
 class RenderManager
@@ -21,7 +21,7 @@ class RenderManager
 	using uint = uint32_t;
 
 public:
-	[[gsl::suppress(26439)]] RenderManager() ;
+	[[gsl::suppress(26439)]] RenderManager();
 	RenderManager(const RenderManager&) = delete;
 	RenderManager& operator=(const RenderManager&) = delete;
 	RenderManager(RenderManager&&) = delete;
@@ -43,12 +43,15 @@ private:
 
 	auto cleanup() noexcept -> void;
 
-	auto createInstance() -> void;
+	auto createInstance()->VkInstance;
 
 	auto printInstanceExtensions(const std::vector<VkExtensionProperties> extensions) const -> void;
 
 	[[gsl::suppress(con.3)]] auto checkInstanceExtensionsNamesAvailable(const char** const required_names, const uint name_count, const std::vector<VkExtensionProperties> available_extensions) const -> bool;
 
+	auto checkValidationLayerSupport() const noexcept -> bool;
+
+	auto getRequiredExtensions() const noexcept -> std::vector<const char*> ;
 
 	/*Members*/
 	WindowPtr m_window;
