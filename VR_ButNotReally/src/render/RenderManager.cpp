@@ -30,12 +30,12 @@ auto RenderManager::initWindow() noexcept -> void {
 		config::app_name, nullptr, nullptr));
 
 
-
+	 
 }
 
 auto RenderManager::initVulkan() noexcept(false) -> void {
 	m_instance = createInstance();
-
+	setupDebugCallback();
 }
 
 auto RenderManager::loopIteration() noexcept -> void {
@@ -43,6 +43,7 @@ auto RenderManager::loopIteration() noexcept -> void {
 }
 
 auto RenderManager::cleanup() noexcept -> void {
+	destroyDebugReportCallbackEXT(m_instance, m_debug_callback, nullptr);
 	vkDestroyInstance(m_instance, nullptr);
 	glfwTerminate();
 }
@@ -77,19 +78,9 @@ auto RenderManager::createInstance() noexcept(false) -> VkInstance {
 		create_info.enabledLayerCount = gsl::narrow<uint>(config::validation_layers.size());
 	}
 
-	auto extensions = getRequiredExtensions();
-	create_info.enabledExtensionCount = gsl::narrow<uint>(extensions.size());
-	create_info.ppEnabledExtensionNames = extensions.data();
-	
-
-	const char** glfw_extensions = nullptr;
-	auto glfw_extension_count = uint{ 0 };
-	{
-		glfw_extensions = glfwGetRequiredInstanceExtensions(&glfw_extension_count);
-
-		create_info.enabledExtensionCount = glfw_extension_count;
-		create_info.ppEnabledExtensionNames = glfw_extensions;
-	}
+	auto extensions_required = getRequiredExtensions();
+	create_info.enabledExtensionCount = gsl::narrow<uint>(extensions_required.size());
+	create_info.ppEnabledExtensionNames = extensions_required.data();
 
 	create_info.enabledLayerCount = 0;
 
@@ -102,17 +93,17 @@ auto RenderManager::createInstance() noexcept(false) -> VkInstance {
 	/*
 	We check the extensions available in the current instance.
 	*/
-	auto extension_vector = std::vector<VkExtensionProperties>();
+	auto extensions_available = std::vector<VkExtensionProperties>();
 	{
 		auto extension_count = uint{ 0 };
 		vkEnumerateInstanceExtensionProperties(nullptr, &extension_count, nullptr);
-		extension_vector.resize(extension_count);
-		vkEnumerateInstanceExtensionProperties(nullptr, &extension_count, extension_vector.data());
+		extensions_available.resize(extension_count);
+		vkEnumerateInstanceExtensionProperties(nullptr, &extension_count, extensions_available.data());
 	}
 
-	printInstanceExtensions(extension_vector);
+	printInstanceExtensions(extensions_available);
 
-	checkInstanceExtensionsNamesAvailable(glfw_extensions, glfw_extension_count, extension_vector);
+	checkInstanceExtensionsNamesAvailable(extensions_required, extensions_available);
 
 	return instance;
 }
@@ -134,28 +125,23 @@ auto RenderManager::createInstance() noexcept(false) -> VkInstance {
 
 }
 
-auto RenderManager::checkInstanceExtensionsNamesAvailable(const char** const required_names, const uint name_count, const std::vector<VkExtensionProperties> available_extensions) const -> bool {
+auto RenderManager::checkInstanceExtensionsNamesAvailable(const std::vector<const char*> required_extensions, const std::vector<VkExtensionProperties> available_extensions) const -> bool {
 
-	if (name_count <= 0) {
+	if (required_extensions.size() <= 0) {
 		std::cerr << "There are no exceptions required, and there should be some if we want to check them" << std::endl;
-		return false;
-	}
-
-	if (required_names == nullptr) {
-		std::cerr << "The names of the extensions required cannot be accessed" << std::endl;
 		return false;
 	}
 
 	std::cout << "Checking that all the necessary vulkan extensions are available" << std::endl;
 	auto all_found = true;
-	for (auto i = 0u; i < name_count; ++i) {
+	for (auto required_extension : required_extensions) {
 		auto found = false;
+		[[gsl::suppress(bounds)]]{
+		std::cout << "\t[" << required_extension << "] is required";
+		}
 		for (const auto& e : available_extensions) {
-			[[gsl::suppress(bounds)]]{
-			std::cout << "\t[" << required_names[i] << "] is required";
-			found = strcmp(e.extensionName, required_names[i]);
+			found = strcmp(e.extensionName, required_extension);
 			if (found) break;
-			}
 		}
 		if (found) {
 			std::cout << " and available" << std::endl;
@@ -184,7 +170,6 @@ auto RenderManager::checkValidationLayerSupport() const noexcept -> bool {
 	auto found_all_layers = true;
 	for (const auto& layer_necessary : config::validation_layers) {
 		auto found_layer = false;
-
 		std::cout << "\t[" << layer_necessary << "] is required";
 		for (const auto& layer_present : layer_properties) {
 			if (strcmp(layer_present.layerName, layer_necessary) == 0) {
@@ -192,7 +177,6 @@ auto RenderManager::checkValidationLayerSupport() const noexcept -> bool {
 				break;
 			}
 		}
-
 		if(found_layer){
 			std::cout << " and available" << std::endl;
 			continue;
@@ -201,7 +185,6 @@ auto RenderManager::checkValidationLayerSupport() const noexcept -> bool {
 			std::cout << " and NOT available" << std::endl;
 			found_all_layers = false;
 		}
-
 	}
 	
 	std::cout << std::endl;
@@ -224,6 +207,101 @@ auto RenderManager::getRequiredExtensions() const noexcept -> std::vector<const 
 	return extensions;
 }
 
+#pragma warning( push )
+#pragma warning( disable : 4229)
+auto RenderManager::debugReportCallback(
+	VkDebugReportFlagsEXT                       flags,
+	VkDebugReportObjectTypeEXT                  object_type,
+	uint64_t                                    object,
+	size_t                                      location,
+	int32_t                                     msg_code,
+	const char*                                 layer_prefix,
+	const char*                                 msg,
+	void*                                       user_data
+) -> VKAPI_ATTR VkBool32 VKAPI_CALL {
+
+	std::cerr << "Validation Layer Message [" << layer_prefix << "]: ";
+
+	if ((flags & VK_DEBUG_REPORT_DEBUG_BIT_EXT) != 0) {
+		std::cerr << "[DEBUG: " << msg_code << "]: " << msg << std::endl;
+	}
+	else if ((flags & VK_DEBUG_REPORT_ERROR_BIT_EXT) != 0) {
+		std::cerr << "[ERROR: " << msg_code << "]: " << msg << std::endl;
+	}
+	else if ((flags & VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT) != 0) {
+		std::cerr << "[PERFORMANCE WARNING: " << msg_code << "]: " << msg << std::endl;
+	}
+	else if ((flags & VK_DEBUG_REPORT_WARNING_BIT_EXT) != 0) {
+		std::cerr << "[WARNING: " << msg_code << "]: " << msg << std::endl;
+	}
+	else if ((flags & VK_DEBUG_REPORT_INFORMATION_BIT_EXT) != 0) {
+		std::cerr << "[INFO: " << msg_code << "]: " << msg << std::endl;
+	}
+	else {
+		std::cerr << "[UNKNOWN: " << msg_code << "]: The type of error is not known, the message states: " << msg << std::endl;
+	}
+
+	std::cerr << std::endl;
+
+	return VK_FALSE;
+}
+#pragma warning( pop )
+
+auto RenderManager::setupDebugCallback() -> void {
+	
+	if (!config::extensions_enabled || !config::validation_layers_enabled) {
+		return;
+	}
+
+	VkDebugReportCallbackCreateInfoEXT create_info{};
+	create_info.sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT;
+	create_info.flags =
+		( VK_DEBUG_REPORT_DEBUG_BIT_EXT
+		| VK_DEBUG_REPORT_ERROR_BIT_EXT 
+		| VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT
+		| VK_DEBUG_REPORT_WARNING_BIT_EXT
+		| VK_DEBUG_REPORT_INFORMATION_BIT_EXT);
+	create_info.pfnCallback = reinterpret_cast<PFN_vkDebugReportCallbackEXT>(debugReportCallback);
+
+	//createDebugReportCallbackEXT USE
+
+	if (createDebugReportCallbackEXT(m_instance, &create_info, nullptr, &m_debug_callback) != VK_SUCCESS) {
+		throw std::runtime_error("We could't setup the debug callback function");
+	}
+} 
+
+auto RenderManager::createDebugReportCallbackEXT(
+	VkInstance instance,
+	const VkDebugReportCallbackCreateInfoEXT * create_info,
+	const VkAllocationCallbacks* allocator,
+	VkDebugReportCallbackEXT* callback
+) -> VkResult {
+	 
+	auto function = reinterpret_cast<PFN_vkCreateDebugReportCallbackEXT>(vkGetInstanceProcAddr(m_instance, "vkCreateDebugReportCallbackEXT"));
+
+	if (function) {
+		return function(instance, create_info, allocator, callback);
+	}
+	else {
+		return VK_ERROR_EXTENSION_NOT_PRESENT;
+	}
+
+}
+
+auto RenderManager::destroyDebugReportCallbackEXT(
+	VkInstance instance,
+	VkDebugReportCallbackEXT callback,
+	const VkAllocationCallbacks* allocator
+)-> void {
+	auto function = reinterpret_cast<PFN_vkDestroyDebugReportCallbackEXT>(vkGetInstanceProcAddr(m_instance, "vkDestroyDebugReportCallbackEXT"));
+
+	if (function) {
+		function(instance, callback, allocator);
+	}
+}
+
+
+/* --- Non members of the RenderManager Class --- */
 
 
 /*Functors*/

@@ -1,10 +1,10 @@
 #include "./render/RenderManager.h"
 
-/*
+/* 
 
-	Next Step for the renderer: VALIDATION LAYERS
+	Next Step for the renderer: Physical Devices and Queues!
 
-	Reference: https://vulkan-tutorial.com/Drawing_a_triangle/Setup/Validation_layers
+	Reference: https://vulkan-tutorial.com/Drawing_a_triangle/Setup/Physical_devices_and_queue_families
 
 */
 
@@ -26,6 +26,7 @@ int main() {
 	some messages or wait for character input to see the terminal output.
 
 	*/
+
 	{
 		try {
 			RenderManager render_manager;
@@ -35,6 +36,8 @@ int main() {
 		}
 		catch (const std::exception& exception) {
 			std::cerr << exception.what() << std::endl;
+			std::cerr << "\nThe program will now be closed" << std::endl;
+			pressToContinue();
 			return EXIT_FAILURE;
 		}
 	}

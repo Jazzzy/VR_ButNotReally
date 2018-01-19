@@ -10,17 +10,18 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
+
+
 struct GLFWWindowDestroyer {
 	auto operator()(GLFWwindow* ptr) noexcept -> void;
 };
 
 class RenderManager
 {
-
+public:
 	using WindowPtr = std::unique_ptr<GLFWwindow, GLFWWindowDestroyer>;
 	using uint = uint32_t;
 
-public:
 	[[gsl::suppress(26439)]] RenderManager();
 	RenderManager(const RenderManager&) = delete;
 	RenderManager& operator=(const RenderManager&) = delete;
@@ -47,16 +48,49 @@ private:
 
 	auto printInstanceExtensions(const std::vector<VkExtensionProperties> extensions) const -> void;
 
-	[[gsl::suppress(con.3)]] auto checkInstanceExtensionsNamesAvailable(const char** const required_names, const uint name_count, const std::vector<VkExtensionProperties> available_extensions) const -> bool;
+	[[gsl::suppress(con.3)]] auto checkInstanceExtensionsNamesAvailable(const std::vector<const char*> required_extensions, const std::vector<VkExtensionProperties> available_extensions) const -> bool;
 
 	auto checkValidationLayerSupport() const noexcept -> bool;
 
-	auto getRequiredExtensions() const noexcept -> std::vector<const char*> ;
+	auto getRequiredExtensions() const noexcept->std::vector<const char*>;
 
-	/*Members*/
+#pragma warning( push )
+#pragma warning( disable : 4229)
+	auto static debugReportCallback(
+		VkDebugReportFlagsEXT                       flags,
+		VkDebugReportObjectTypeEXT                  object_type,
+		uint64_t                                    object,
+		size_t                                      location,
+		int32_t                                     msg_code,
+		const char*                                 layer_prefix,
+		const char*                                 msg,
+		void*                                       user_data
+	)->VKAPI_ATTR VkBool32 VKAPI_CALL;
+#pragma warning( pop )
+
+	auto setupDebugCallback() -> void;
+
+	auto createDebugReportCallbackEXT(
+		VkInstance instance,
+		const VkDebugReportCallbackCreateInfoEXT * create_info,
+		const VkAllocationCallbacks* allocator,
+		VkDebugReportCallbackEXT* callback
+	)->VkResult;
+
+	auto destroyDebugReportCallbackEXT(
+		VkInstance instance,
+		VkDebugReportCallbackEXT callback,
+		const VkAllocationCallbacks* allocator
+	) -> void;
+
+
+	/* --- Members --- */
+
 	WindowPtr m_window;
 
 	VkInstance m_instance;
+
+	VkDebugReportCallbackEXT m_debug_callback;
 
 };
 

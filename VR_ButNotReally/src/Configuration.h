@@ -3,7 +3,6 @@
 #include <string>
 #include <vulkan/vulkan.h>
 
-
 #pragma warning(disable: 26426)
 
 namespace config {
@@ -15,7 +14,7 @@ namespace config {
 	const auto major_version{ 1 };
 	const auto minor_version{ 0 };
 	const auto patch_version{ 0 };
-
+	
 	const auto validation_layers_enabled =
 #ifdef NDEBUG
 		false;
@@ -35,7 +34,6 @@ namespace config {
 #endif
 	
 
-
 	const auto extensions_enabled =
 #ifdef NDEBUG
 		false;
@@ -53,7 +51,5 @@ namespace config {
 		VK_EXT_DEBUG_REPORT_EXTENSION_NAME
 	};
 #endif
-
-
 
 }
