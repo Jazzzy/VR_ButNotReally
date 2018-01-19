@@ -26,9 +26,6 @@
     <ClInclude Include="src\Configuration.h" />
     <ClInclude Include="src\render\RenderManager.h" />
   </ItemGroup>
-  <ItemGroup>
-    <None Include="packages.config" />
-  </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>15.0</VCProjectVersion>
     <ProjectGuid>{af2ad4ff-0746-4ded-9272-1800283dd1de}</ProjectGuid>
@@ -106,7 +103,8 @@
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>C:\dep\VulkanSDK\1.0.65.1\Include;C:\dep\glfw\glfw-3.2.1.bin.WIN32\include;C:\dep\glm</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\dep\GSL\include\;C:\dep\VulkanSDK\1.0.65.1\Include;C:\dep\glfw\glfw-3.2.1.bin.WIN32\include;C:\dep\glm</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
     </ClCompile>
     <Link>
       <AdditionalLibraryDirectories>C:\dep\VulkanSDK\1.0.65.1\Lib32;C:\dep\glfw\glfw-3.2.1.bin.WIN32\lib-vc2015;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
@@ -120,7 +118,8 @@
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>C:\dep\VulkanSDK\1.0.65.1\Include;C:\dep\glfw\glfw-3.2.1.bin.WIN64\include;C:\dep\glm</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\dep\GSL\include\;C:\dep\VulkanSDK\1.0.65.1\Include;C:\dep\glfw\glfw-3.2.1.bin.WIN64\include;C:\dep\glm</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
     </ClCompile>
     <Link>
       <AdditionalLibraryDirectories>C:\dep\VulkanSDK\1.0.65.1\Lib;C:\dep\glfw\glfw-3.2.1.bin.WIN64\lib-vc2015;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
@@ -135,9 +134,10 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>C:\dep\VulkanSDK\1.0.65.1\Include;C:\dep\glfw\glfw-3.2.1.bin.WIN32\include;C:\dep\glm</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\dep\GSL\include\;C:\dep\VulkanSDK\1.0.65.1\Include;C:\dep\glfw\glfw-3.2.1.bin.WIN32\include;C:\dep\glm</AdditionalIncludeDirectories>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
     </ClCompile>
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
@@ -154,10 +154,11 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>C:\dep\VulkanSDK\1.0.65.1\Include;C:\dep\glfw\glfw-3.2.1.bin.WIN64\include;C:\dep\glm</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\dep\GSL\include\;C:\dep\VulkanSDK\1.0.65.1\Include;C:\dep\glfw\glfw-3.2.1.bin.WIN64\include;C:\dep\glm</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>CODE_ANALYSIS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
     </ClCompile>
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
@@ -168,13 +169,5 @@
     </Link>
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
-  <ImportGroup Label="ExtensionTargets">
-    <Import Project="..\packages\Microsoft.Gsl.0.1.2.1\build\native\Microsoft.Gsl.targets" Condition="Exists('..\packages\Microsoft.Gsl.0.1.2.1\build\native\Microsoft.Gsl.targets')" />
-  </ImportGroup>
-  <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
-    <PropertyGroup>
-      <ErrorText>This project references NuGet package(s) that are missing on this computer. Use NuGet Package Restore to download them.  For more information, see http://go.microsoft.com/fwlink/?LinkID=322105. The missing file is {0}.</ErrorText>
-    </PropertyGroup>
-    <Error Condition="!Exists('..\packages\Microsoft.Gsl.0.1.2.1\build\native\Microsoft.Gsl.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\Microsoft.Gsl.0.1.2.1\build\native\Microsoft.Gsl.targets'))" />
-  </Target>
+  <ImportGroup Label="ExtensionTargets" />
 </Project>

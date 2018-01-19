@@ -11,17 +11,19 @@
 #include <GLFW/glfw3.h>
 
 
-
 struct GLFWWindowDestroyer {
 	auto operator()(GLFWwindow* ptr) noexcept -> void;
 };
 
+auto operator<<(std::ostream & stream, const VkPhysicalDevice& device) -> std::ostream&;
+
 class RenderManager
 {
-public:
+private:
 	using WindowPtr = std::unique_ptr<GLFWwindow, GLFWWindowDestroyer>;
 	using uint = uint32_t;
 
+public:
 	[[gsl::suppress(26439)]] RenderManager();
 	RenderManager(const RenderManager&) = delete;
 	RenderManager& operator=(const RenderManager&) = delete;
@@ -46,17 +48,17 @@ private:
 
 	auto createInstance()->VkInstance;
 
-	auto printInstanceExtensions(const std::vector<VkExtensionProperties> extensions) const -> void;
+	auto printInstanceExtensions(const std::vector<VkExtensionProperties>& extensions) const -> void;
 
-	[[gsl::suppress(con.3)]] auto checkInstanceExtensionsNamesAvailable(const std::vector<const char*> required_extensions, const std::vector<VkExtensionProperties> available_extensions) const -> bool;
+	[[gsl::suppress(bounds.3)]] auto checkInstanceExtensionsNamesAvailable(const std::vector<const char*>& required_extensions, const std::vector<VkExtensionProperties>& available_extensions) const -> bool;
 
-	auto checkValidationLayerSupport() const noexcept -> bool;
+	[[gsl::suppress(bounds.3)]] auto checkValidationLayerSupport() const noexcept -> bool;
 
 	auto getRequiredExtensions() const noexcept->std::vector<const char*>;
 
 #pragma warning( push )
 #pragma warning( disable : 4229)
-	auto static debugReportCallback(
+	auto static VKAPI_ATTR VKAPI_CALL debugReportCallback(
 		VkDebugReportFlagsEXT                       flags,
 		VkDebugReportObjectTypeEXT                  object_type,
 		uint64_t                                    object,
@@ -65,32 +67,38 @@ private:
 		const char*                                 layer_prefix,
 		const char*                                 msg,
 		void*                                       user_data
-	)->VKAPI_ATTR VkBool32 VKAPI_CALL;
+	) -> VkBool32 ;
 #pragma warning( pop )
 
 	auto setupDebugCallback() -> void;
 
 	auto createDebugReportCallbackEXT(
-		VkInstance instance,
+		const VkInstance& instance,
 		const VkDebugReportCallbackCreateInfoEXT * create_info,
 		const VkAllocationCallbacks* allocator,
 		VkDebugReportCallbackEXT* callback
-	)->VkResult;
+	) noexcept ->VkResult;
 
 	auto destroyDebugReportCallbackEXT(
-		VkInstance instance,
-		VkDebugReportCallbackEXT callback,
+		const VkInstance& instance,
+		const VkDebugReportCallbackEXT& callback,
 		const VkAllocationCallbacks* allocator
-	) -> void;
+	) noexcept -> void;
+
+	auto pickPhysicalDevice()  -> void;
+
+	auto physicalDeviceSuitability(const VkPhysicalDevice & device) const noexcept ->std::tuple<bool, int>;
 
 
 	/* --- Members --- */
 
-	WindowPtr m_window;
+	WindowPtr m_window{};
 
-	VkInstance m_instance;
+	VkInstance m_instance{};
 
-	VkDebugReportCallbackEXT m_debug_callback;
+	VkDebugReportCallbackEXT m_debug_callback{};
+
+	VkPhysicalDevice m_physical_device = VK_NULL_HANDLE;
 
 };
 

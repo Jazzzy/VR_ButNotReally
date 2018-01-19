@@ -7,49 +7,54 @@
 
 namespace config {
 
-	const auto app_name{ "VR: But not really" };
-	const auto engine_name{ "No engine" };
-	const auto initial_window_width{ 800 };
-	const auto initial_window_heigth{ 600 };
-	const auto major_version{ 1 };
-	const auto minor_version{ 0 };
-	const auto patch_version{ 0 };
+	constexpr auto app_name{ "VR: But not really" };
+	constexpr auto engine_name{ "No engine" };
+	constexpr auto initial_window_width{ 800 };
+	constexpr auto initial_window_heigth{ 600 };
+	constexpr auto major_version{ 1 };
+	constexpr auto minor_version{ 0 };
+	constexpr auto patch_version{ 0 };
 	
-	const auto validation_layers_enabled =
-#ifdef NDEBUG
+	constexpr auto validation_layers_enabled =
+#ifndef _DEBUG  //Release
 		false;
-#else
+#else           //Debug
 		true;
 #endif
 
 	const std::vector<const char*> validation_layers
-#ifdef NDEBUG
 	{
 		"VK_LAYER_LUNARG_standard_validation"
 	};
-#else
-	{
-		"VK_LAYER_LUNARG_standard_validation"
-	};
-#endif
+
 	
 
-	const auto extensions_enabled =
-#ifdef NDEBUG
+	constexpr auto extensions_enabled =
+#ifndef _DEBUG  //Release
 		false;
-#else
+#else           //Debug
 		true;
 #endif
 
 	const std::vector<const char*> extensions 
-#ifdef NDEBUG
+#ifndef _DEBUG  //Release
 	{
 		VK_EXT_DEBUG_REPORT_EXTENSION_NAME
 	};
-#else
+#else           //Debug
 	{
 		VK_EXT_DEBUG_REPORT_EXTENSION_NAME
 	};
 #endif
+
+
+
+	namespace gpu {
+		
+		constexpr auto discrete_gpu_bonus = 1000;
+		constexpr auto integrated_gpu_bonus = 500;
+	
+	}
+
 
 }

@@ -2,9 +2,9 @@
 
 /* 
 
-	Next Step for the renderer: Physical Devices and Queues!
+	Next Step for the renderer: Queue Families!
 
-	Reference: https://vulkan-tutorial.com/Drawing_a_triangle/Setup/Physical_devices_and_queue_families
+	Reference: https://vulkan-tutorial.com/Drawing_a_triangle/Setup/Physical_devices_and_queue_families (in the Queue families section)
 
 */
 
