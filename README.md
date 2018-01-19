@@ -1,2 +1,2 @@
 # VR_ButNotReally
-VR stands for Vulkan Renderer, funny stuff ah? :P
+VR stands for Vulkan Renderer. Name change incoming.
