@@ -10,12 +10,8 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
-
-struct GLFWWindowDestroyer {
-	auto operator()(GLFWwindow* ptr) noexcept -> void;
-};
-
-auto operator<<(std::ostream & stream, const VkPhysicalDevice& device) -> std::ostream&;
+#include "../utils/Utils.h"
+#include "./RenderUtils.h"
 
 class RenderManager
 {
@@ -67,7 +63,7 @@ private:
 		const char*                                 layer_prefix,
 		const char*                                 msg,
 		void*                                       user_data
-	) -> VkBool32 ;
+	)->VkBool32;
 #pragma warning( pop )
 
 	auto setupDebugCallback() -> void;
@@ -77,7 +73,7 @@ private:
 		const VkDebugReportCallbackCreateInfoEXT * create_info,
 		const VkAllocationCallbacks* allocator,
 		VkDebugReportCallbackEXT* callback
-	) noexcept ->VkResult;
+	) noexcept->VkResult;
 
 	auto destroyDebugReportCallbackEXT(
 		const VkInstance& instance,
@@ -85,10 +81,13 @@ private:
 		const VkAllocationCallbacks* allocator
 	) noexcept -> void;
 
-	auto pickPhysicalDevice()  -> void;
+	auto pickPhysicalDevice() -> void;
 
-	auto physicalDeviceSuitability(const VkPhysicalDevice & device) const noexcept ->std::tuple<bool, int>;
+	auto physicalDeviceSuitability(const VkPhysicalDevice& device) const noexcept->std::tuple<bool, int>;
 
+	auto findQueueFamilies(const VkPhysicalDevice& physical_device, PrintOptions print_options) const->QueueFamilyIndices;
+
+	auto createLogicalDevice() -> void;
 
 	/* --- Members --- */
 
@@ -99,6 +98,11 @@ private:
 	VkDebugReportCallbackEXT m_debug_callback{};
 
 	VkPhysicalDevice m_physical_device = VK_NULL_HANDLE;
+
+	// This one is the main logical device 
+	VkDevice m_device{};
+
+	VkQueue m_graphics_queue{};
 
 };
 

@@ -38,6 +38,7 @@ auto RenderManager::initVulkan() noexcept(false) -> void {
 	m_instance = createInstance();
 	setupDebugCallback();
 	pickPhysicalDevice();
+	createLogicalDevice();
 }
 
 auto RenderManager::loopIteration() noexcept -> void {
@@ -45,6 +46,7 @@ auto RenderManager::loopIteration() noexcept -> void {
 }
 
 auto RenderManager::cleanup() noexcept -> void {
+	vkDestroyDevice(m_device, nullptr);
 	destroyDebugReportCallbackEXT(m_instance, m_debug_callback, nullptr);
 	vkDestroyInstance(m_instance, nullptr);
 	m_window.reset();
@@ -341,6 +343,11 @@ auto RenderManager::pickPhysicalDevice() -> void {
 	auto devices = std::vector<VkPhysicalDevice>(count);
 	vkEnumeratePhysicalDevices(m_instance, &count, devices.data());
 
+	std::cout << "The available physical devices are the following" << std::endl;
+	for (const auto& device : devices) {
+		std::cout << device << std::endl;
+	}
+	std::cout << std::endl;
 
 	auto devices_sorted = std::multimap<int, VkPhysicalDevice>{};
 
@@ -358,12 +365,6 @@ auto RenderManager::pickPhysicalDevice() -> void {
 		throw std::runtime_error("We cannot continue because there is no suitable physical device (GPU)");
 	}
 
-	std::cout << "The available physical devices are the following" << std::endl;
-	for (const auto& device : devices_sorted) {
-		std::cout << m_physical_device << std::endl;
-	}
-	std::cout << std::endl;
-
 	std::cout << "The selected physical device is:" << std::endl << m_physical_device << std::endl;
 
 }
@@ -377,8 +378,10 @@ auto RenderManager::physicalDeviceSuitability(const VkPhysicalDevice & device) c
 
 	auto score = 0;
 
+	auto family_indices = findQueueFamilies(device, PrintOptions::full);
+
 	/* - Checking if something makes us mark the device as not suitable - */
-	if (!features.geometryShader) {
+	if (!features.geometryShader || !family_indices.isComplete()) {
 		return std::make_tuple(false, 0);
 	}
 
@@ -395,58 +398,79 @@ auto RenderManager::physicalDeviceSuitability(const VkPhysicalDevice & device) c
 	return std::make_tuple(true, score);
 }
 
+auto RenderManager::findQueueFamilies(const VkPhysicalDevice& physical_device, PrintOptions print_options) const -> QueueFamilyIndices {
+
+	auto queue_family_count = uint{};
+	vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_family_count, nullptr);
+
+	auto queue_families = std::vector<VkQueueFamilyProperties>(queue_family_count);
+	vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_family_count, queue_families.data());
+
+	auto indices = QueueFamilyIndices{};
+
+	if (print_options == PrintOptions::full)
+		std::cout << "The queue families for the physical device [" << getPhysicalDeviceName(physical_device) << "] are the following" << std::endl;
+
+	{
+		auto i = 0;
+		for (const VkQueueFamilyProperties& family : queue_families) {
+
+			if (print_options == PrintOptions::full)
+				std::cout << " - " << getVulkanQueueFlagNames(family.queueFlags) << std::endl;
 
 
+			if (family.queueCount > 0 && family.queueFlags & config::gpu::required_family_flags) {
+				indices.graphics_family = i;
+			}
 
+			if (indices.isComplete()) break;
 
+			i++;
+		}
+	}
 
+	if (print_options == PrintOptions::full)
+		std::cout << std::endl;
 
+	return indices;
+}
 
+auto RenderManager::createLogicalDevice() -> void {
 
-/* --- Non members of the RenderManager Class --- */
+	const auto indices = findQueueFamilies(m_physical_device, PrintOptions::none);
 
-auto operator<<(std::ostream & stream, const VkPhysicalDevice& device)->std::ostream& {
-	auto features = VkPhysicalDeviceFeatures{};
-	auto properties = VkPhysicalDeviceProperties{};
-	vkGetPhysicalDeviceProperties(device, &properties);
-	vkGetPhysicalDeviceFeatures(device, &features);
+	auto queue_create_info = VkDeviceQueueCreateInfo{};
+	queue_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+	queue_create_info.queueFamilyIndex = indices.graphics_family;
+	queue_create_info.queueCount = config::gpu::queue_amount;
+	const auto queue_priority = 1.0f;
+	queue_create_info.pQueuePriorities = &queue_priority;
 
-	[[gsl::suppress(bounds.3)]]{
-	auto upper_name = std::string(properties.deviceName);
+	// Complete here the features that we need from the physical devices
+	const auto physical_device_features = VkPhysicalDeviceFeatures{};
 
-	std::transform(upper_name.begin(), upper_name.end(), upper_name.begin(), toupper);
-
-	stream << "[" << upper_name << "]" << std::endl;
-
-	stream << " - Device ID: " << properties.deviceID << std::endl;
-	stream << " - Vendor ID: " << properties.vendorID << std::endl;
-	stream << " - API Version: " << properties.apiVersion << std::endl;
-	stream << " - Device Name: " << properties.deviceName << std::endl;
+	auto create_info = VkDeviceCreateInfo{};
+	create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+	create_info.pQueueCreateInfos = &queue_create_info;
+	create_info.queueCreateInfoCount = 1;
+	create_info.pEnabledFeatures = &physical_device_features;
 	
-	if (properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
-		stream << " - Device Type : " << "Discrete GPU" << std::endl;
+	create_info.enabledExtensionCount = 0;
+
+	if (config::validation_layers_enabled) {
+		create_info.enabledLayerCount = gsl::narrow<uint>(config::validation_layers.size());
+		create_info.ppEnabledLayerNames = config::validation_layers.data();
 	}
-	else if (properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) {
-		stream << " - Device Type : " << "Integrated GPU" << std::endl;
-	}
-	else if (properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_CPU) {
-		stream << " - Device Type : " << "CPU" << std::endl;
-	}
-	else if (properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU) {
-		stream << " - Device Type : " << "Virtual GPU" << std::endl;
-	}
-	else if (properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_OTHER) {
-		stream << " - Device Type : " << "Other" << std::endl;
-	}
-	stream << " - Driver Version ID: " << properties.driverVersion << std::endl;
+	else {
+		create_info.enabledLayerCount = 0;
 	}
 
-	return stream;
+	if (vkCreateDevice(m_physical_device, &create_info, nullptr, &m_device) != VK_SUCCESS) {
+		throw std::runtime_error("We couldn't create a logical device");
+	}
+
+	vkGetDeviceQueue(m_device, indices.graphics_family, 0, &m_graphics_queue);
+
 }
 
 
-/*Functors*/
-
-auto GLFWWindowDestroyer::operator()(GLFWwindow* ptr) noexcept -> void {
-	glfwDestroyWindow(ptr);
-}
