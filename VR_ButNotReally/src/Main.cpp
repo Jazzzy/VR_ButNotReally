@@ -3,9 +3,9 @@
 
 /* 
 
-	Next Step for the renderer: Create a Presentation Queue!
+	Next Step for the renderer: Create Image Views!
 
-	Reference: https://vulkan-tutorial.com/Drawing_a_triangle/Presentation/Window_surface
+	Reference: https://vulkan-tutorial.com/Drawing_a_triangle/Presentation/Image_views
 
 */
 
@@ -38,6 +38,5 @@ int main() {
 	std::cout << "\nThe program will now be closed" << std::endl;
 	pressToContinue();
 	return EXIT_SUCCESS;
-
 }
 

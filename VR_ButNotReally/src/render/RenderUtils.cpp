@@ -55,6 +55,34 @@ auto operator<<(std::ostream & stream, const VkPhysicalDevice& device)->std::ost
 }
 
 
+auto operator<<(std::ostream & stream, const VkPresentModeKHR& present_mode)->std::ostream& {
+
+	/*
+	VK_PRESENT_MODE_IMMEDIATE_KHR = 0,
+		VK_PRESENT_MODE_MAILBOX_KHR = 1,
+		VK_PRESENT_MODE_FIFO_KHR = 2,
+		VK_PRESENT_MODE_FIFO_RELAXED_KHR = 3,
+		*/
+
+	stream << "[";
+
+	if (present_mode == VK_PRESENT_MODE_IMMEDIATE_KHR)
+		stream << "VK_PRESENT_MODE_IMMEDIATE_KHR";
+	else if (present_mode == VK_PRESENT_MODE_MAILBOX_KHR)
+		stream << "VK_PRESENT_MODE_MAILBOX_KHR";
+	else if(present_mode == VK_PRESENT_MODE_FIFO_KHR)
+		stream << "VK_PRESENT_MODE_FIFO_KHR";
+	else if(present_mode == VK_PRESENT_MODE_FIFO_RELAXED_KHR)
+		stream << "VK_PRESENT_MODE_FIFO_RELAXED_KHR";
+	else {
+		stream << "ERROR: Unexpected present mode";
+	}
+
+	stream << "]";
+	return stream;
+}
+
+
 auto getVulkanQueueFlagNames(const int& flags)->std::string {
 
 	auto ss = std::stringstream{};

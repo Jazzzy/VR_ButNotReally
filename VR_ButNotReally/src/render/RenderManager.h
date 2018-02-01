@@ -19,6 +19,7 @@
 #include "../utils/Utils.h"
 #include "./RenderUtils.h"
 
+
 class RenderManager
 {
 private:
@@ -97,6 +98,18 @@ private:
 
 	auto createLogicalDevice() -> void;
 
+	[[gsl::suppress(bounds.3)]] auto checkDeviceExtensionSupport(const VkPhysicalDevice& device) const -> bool;
+
+	auto querySwapChainSupport(const VkPhysicalDevice& device) const->SwapChainSupportDetails;
+
+	auto pickSurfaceChainFormat(const std::vector<VkSurfaceFormatKHR>& available_formats) const->VkSurfaceFormatKHR;
+
+	auto pickSurfacePresentMode(const std::vector<VkPresentModeKHR>& available_modes)  const noexcept->VkPresentModeKHR;
+
+	auto pickSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities)  const noexcept->VkExtent2D;
+
+	auto createSwapChain() -> void;
+
 	/* --- Members --- */
 
 	WindowPtr m_window{};
@@ -107,12 +120,24 @@ private:
 
 	VkSurfaceKHR m_surface{};
 
+	QueueFamilyIndices m_queue_family_indices{};
+
 	VkPhysicalDevice m_physical_device = VK_NULL_HANDLE;
 
 	// This one is the main logical device 
 	VkDevice m_device{};
 
 	VkQueue m_graphics_queue{};
+
+	VkQueue m_present_queue{};
+
+	VkSwapchainKHR m_swap_chain{};
+
+	std::vector<VkImage> m_swap_chain_images{};
+
+	VkFormat m_swap_chain_image_format{};
+
+	VkExtent2D m_swap_chain_extent{};
 
 };
 
