@@ -5,10 +5,16 @@
 #include <functional>
 #include <memory>
 #include <vector>
+#include <gsl/gsl>
 
+
+#define VK_USE_PLATFORM_WIN32_KHR
 #include <vulkan/vulkan.h>
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
+#define GLFW_EXPOSE_NATIVE_WIN32
+#include <GLFW/glfw3native.h>
+
 
 #include "../utils/Utils.h"
 #include "./RenderUtils.h"
@@ -68,6 +74,8 @@ private:
 
 	auto setupDebugCallback() -> void;
 
+	auto createSurface() -> void;
+
 	auto createDebugReportCallbackEXT(
 		const VkInstance& instance,
 		const VkDebugReportCallbackCreateInfoEXT * create_info,
@@ -96,6 +104,8 @@ private:
 	VkInstance m_instance{};
 
 	VkDebugReportCallbackEXT m_debug_callback{};
+
+	VkSurfaceKHR m_surface{};
 
 	VkPhysicalDevice m_physical_device = VK_NULL_HANDLE;
 

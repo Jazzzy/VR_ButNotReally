@@ -16,9 +16,11 @@ auto operator<<(std::ostream & stream, const VkPhysicalDevice& device)->std::ost
 
 struct QueueFamilyIndices {
 	int graphics_family = -1;
+	int present_family = -1;
 
 	auto isComplete() noexcept {
-		return graphics_family >= 0;
+		return	graphics_family >= 0 &&
+				present_family >= 0;
 	}
 };
 

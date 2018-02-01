@@ -3,9 +3,9 @@
 
 /* 
 
-	Next Step for the renderer: Queue Families!
+	Next Step for the renderer: Create a Presentation Queue!
 
-	Reference: https://vulkan-tutorial.com/Drawing_a_triangle/Setup/Physical_devices_and_queue_families (in the Queue families section)
+	Reference: https://vulkan-tutorial.com/Drawing_a_triangle/Presentation/Window_surface
 
 */
 

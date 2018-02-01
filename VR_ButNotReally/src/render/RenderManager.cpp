@@ -1,8 +1,8 @@
 #include "RenderManager.h"
 #include "../Configuration.h"
-#include <gsl/gsl>
 #include <map>
 #include <algorithm>
+#include <vulkan/vk_platform.h>
 
 RenderManager::RenderManager() : m_instance() {
 	initWindow();
@@ -37,6 +37,7 @@ auto RenderManager::initWindow() noexcept -> void {
 auto RenderManager::initVulkan() noexcept(false) -> void {
 	m_instance = createInstance();
 	setupDebugCallback();
+	createSurface();
 	pickPhysicalDevice();
 	createLogicalDevice();
 }
@@ -48,6 +49,7 @@ auto RenderManager::loopIteration() noexcept -> void {
 auto RenderManager::cleanup() noexcept -> void {
 	vkDestroyDevice(m_device, nullptr);
 	destroyDebugReportCallbackEXT(m_instance, m_debug_callback, nullptr);
+	vkDestroySurfaceKHR(m_instance, m_surface, nullptr);
 	vkDestroyInstance(m_instance, nullptr);
 	m_window.reset();
 	glfwTerminate();
@@ -326,6 +328,28 @@ auto RenderManager::destroyDebugReportCallbackEXT(
 	}
 }
 
+auto RenderManager::createSurface() -> void {
+
+#ifdef _WIN32
+	auto create_info = VkWin32SurfaceCreateInfoKHR{};
+	create_info.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
+	create_info.hwnd = glfwGetWin32Window(m_window.get());
+	create_info.hinstance = GetModuleHandle(nullptr);
+
+	auto createWin32SurfaceKHR = (PFN_vkCreateWin32SurfaceKHR)vkGetInstanceProcAddr(m_instance,
+		"vkCreateWin32SurfaceKHR");
+
+	if (!createWin32SurfaceKHR || createWin32SurfaceKHR(m_instance, &create_info, nullptr, &m_surface) != VK_SUCCESS) {
+		throw std::runtime_error("We couldn't create a window surface");
+	}
+#else
+	if (glfwCreateWindowSurface(m_instance, m_window.get(), nullptr, &m_surface) != VK_SUCCESS) {
+		throw std::runtime_error("We couldn't create a Win32 surface");
+	}
+#endif
+
+}
+
 auto RenderManager::pickPhysicalDevice() -> void {
 
 	auto count = uint{};
@@ -385,6 +409,10 @@ auto RenderManager::physicalDeviceSuitability(const VkPhysicalDevice & device) c
 		return std::make_tuple(false, 0);
 	}
 
+	if (family_indices.graphics_family == family_indices.present_family) {
+		score += config::gpu::same_queue_family;
+	}
+
 	/* - Adding points to the score - */
 	if (properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
 		score += config::gpu::discrete_gpu_bonus;
@@ -418,9 +446,15 @@ auto RenderManager::findQueueFamilies(const VkPhysicalDevice& physical_device, P
 			if (print_options == PrintOptions::full)
 				std::cout << " - " << getVulkanQueueFlagNames(family.queueFlags) << std::endl;
 
-
-			if (family.queueCount > 0 && family.queueFlags & config::gpu::required_family_flags) {
-				indices.graphics_family = i;
+			if (family.queueCount > 0) {
+				if (family.queueFlags & config::gpu::required_family_flags) {
+					indices.graphics_family = i;
+				}
+				auto present_support = VkBool32{};
+				vkGetPhysicalDeviceSurfaceSupportKHR(physical_device, i, m_surface, &present_support);
+				if (present_support) {
+					indices.present_family = i;
+				}
 			}
 
 			if (indices.isComplete()) break;
@@ -454,7 +488,7 @@ auto RenderManager::createLogicalDevice() -> void {
 	create_info.pQueueCreateInfos = &queue_create_info;
 	create_info.queueCreateInfoCount = 1;
 	create_info.pEnabledFeatures = &physical_device_features;
-	
+
 	create_info.enabledExtensionCount = 0;
 
 	if (config::validation_layers_enabled) {
