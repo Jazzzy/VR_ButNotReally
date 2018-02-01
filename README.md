@@ -18,6 +18,7 @@ The things that have been implemented so far are the following:
 * Configured the Debug Report Extension to get runtime debug information about the application.
 * Implemented visualization, processing and selection of physical devices available on the system that support vulkan.
 * Implemented visualization, processing, selection and creatiton of necesssary queues and logical devices. 
+* Implemented full custom swap chain configuration and selection. Targeting a triple buffer architecture.
 
 
 
