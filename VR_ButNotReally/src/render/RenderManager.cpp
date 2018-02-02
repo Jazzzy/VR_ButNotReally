@@ -107,6 +107,7 @@ auto RenderManager::createInstance() noexcept(false) -> VkInstance {
 		extensions_available.resize(extension_count);
 		vkEnumerateInstanceExtensionProperties(nullptr, &extension_count, extensions_available.data());
 
+		std::cout << "Printing available extensions in the current vulkan instance" << std::endl;
 		printInstanceExtensions(extensions_available);
 	}
 
@@ -130,10 +131,8 @@ auto RenderManager::createInstance() noexcept(false) -> VkInstance {
 
 [[gsl::suppress(bounds)]] auto RenderManager::printInstanceExtensions(const std::vector<VkExtensionProperties>& extensions) const -> void {
 
-	std::cout << "Printing available extensions in the current vulkan instance" << std::endl;
-
 	if (extensions.size() == 0) {
-		std::cout << "\tNo available extensions in the current vulkan instance" << std::endl;
+		std::cout << "\tNo available extensions" << std::endl;
 		return;
 	}
 
