@@ -12,7 +12,7 @@ pointer goes out of scope.
 struct GLFWWindowDestroyer {
 	auto operator()(GLFWwindow* ptr) noexcept -> void;
 };
-
+ 
 /**
 Stores the queue indices for the graphics and presentation
 queues in a vulkan physical device.

@@ -360,7 +360,7 @@ auto RenderManager::createSurface() -> void {
 	}
 #endif
 
-	}
+}
 
 auto RenderManager::pickPhysicalDevice() -> void {
 
@@ -776,15 +776,74 @@ auto RenderManager::createImageViews() -> void {
 		create_info.subresourceRange.levelCount = 1;
 
 		if (vkCreateImageView(m_device, &create_info, nullptr, &m_swap_chain_image_views[i]) != VK_SUCCESS) {
-			throw new std::runtime_error("Couldn't create an image view for an image in the swap chain");
+			throw std::runtime_error("Couldn't create an image view for an image in the swap chain");
 		}
 	}
 }
 
 auto RenderManager::createGraphicsPipeline() -> void {
 
-	//@@DOING: Call readFileToChars when it's done
+
+	auto vert_shader_code = readFileToChars(config::shader_path + "triangle_vert.spv");
+	auto frag_shader_code = readFileToChars(config::shader_path + "triangle_frag.spv");
+
+
+	std::cout << " - Creating vertex shader module " << std::endl;
+	auto vert_shader_module = createShaderModule(vert_shader_code);
+	std::cout << "\tDone" << std::endl << std::endl;
+
+	std::cout << " - Creating fragment shader module " << std::endl;
+	auto frag_shader_module = createShaderModule(frag_shader_code);
+	std::cout << "\tDone" << std::endl << std::endl;
+
+
+	auto vert_shader_stage_info = VkPipelineShaderStageCreateInfo{};
+	vert_shader_stage_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	vert_shader_stage_info.stage = VK_SHADER_STAGE_VERTEX_BIT;
+	vert_shader_stage_info.module = vert_shader_module;
+	vert_shader_stage_info.pName = "main";
+	/*
+	The attribute "vert_shader_stage_info.pSpecializationInfo" can be used to set
+	values for shader constants to modify shader behaviour. This is much more eficient
+	than using input variables for the shaders in render time since the compiler
+	can use these constants for optimization purposes.
+
+	@see vert_shader_stage_info.pSpecializationInfo
+	*/
+
+	auto frag_shader_stage_info = VkPipelineShaderStageCreateInfo{};
+	frag_shader_stage_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	frag_shader_stage_info.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+	frag_shader_stage_info.module = frag_shader_module;
+	frag_shader_stage_info.pName = "main";
+
+
+	const VkPipelineShaderStageCreateInfo shader_stages[] =
+	{ vert_shader_stage_info, frag_shader_stage_info };
+
+	//@@DOING: Setting up fixed functions of the pipeline: https://vulkan-tutorial.com/Drawing_a_triangle/Graphics_pipeline_basics/Fixed_functions
+
+
+	vkDestroyShaderModule(m_device, vert_shader_module, nullptr);
+	vkDestroyShaderModule(m_device, frag_shader_module, nullptr);
+}
+
+auto RenderManager::createShaderModule(const std::vector<char>& code) const -> VkShaderModule {
+	auto create_info = VkShaderModuleCreateInfo{};
+	create_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+	create_info.codeSize = code.size();
+	[[gsl::suppress(type.1)]]{
+	create_info.pCode = reinterpret_cast<const uint*>(code.data());
+	}
+	auto shader_module = VkShaderModule{};
+
+	if (vkCreateShaderModule(m_device, &create_info, nullptr, &shader_module) != VK_SUCCESS) {
+		throw std::runtime_error("We couldn't create a shader module");
+	}
+
+	return shader_module;
 
 }
+
 
 

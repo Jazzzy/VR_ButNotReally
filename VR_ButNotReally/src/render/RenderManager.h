@@ -292,7 +292,7 @@ private:
 	@see m_swap_chain
 	*/
 	auto createSwapChain() -> void;
-
+	
 	/**
 	Creates an image view for each image in the swap chain so
 	we can use them as color targets later.
@@ -306,6 +306,14 @@ private:
 	our scene.
 	*/
 	auto createGraphicsPipeline() -> void;
+
+	/**
+	Creates a shader module based on the code provided and wraps it up
+	in the VkShaderModule struct
+	
+	@see VkShaderModule
+	*/
+	auto createShaderModule(const std::vector<char>& code) const -> VkShaderModule;
 
 
 	/* ---------------------------------------------------------------------------------------------- */
