@@ -31,7 +31,7 @@
     <ClInclude Include="src\utils\Utils.h" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="src\render\shaders\triangle.bat" />
+    <None Include="src\render\shaders\compile_shaders.bat" />
     <None Include="src\render\shaders\triangle.frag" />
     <None Include="src\render\shaders\triangle.vert" />
   </ItemGroup>
@@ -120,6 +120,13 @@
       <AdditionalDependencies>vulkan-1.lib;glfw3.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalOptions>/verbose:lib %(AdditionalOptions)</AdditionalOptions>
     </Link>
+    <PostBuildEvent>
+      <Command>cd $(ProjectDir)src\render\shaders\
+call $(ProjectDir)src\render\shaders\compile_shaders.bat
+cd $(ProjectDir)
+xcopy  $(ProjectDir)src\res\*  $(OutDir)res /s /y /i</Command>
+      <Message>Copy res folder to bin</Message>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
@@ -135,6 +142,13 @@
       <AdditionalDependencies>vulkan-1.lib;glfw3.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalOptions>/verbose:lib %(AdditionalOptions)</AdditionalOptions>
     </Link>
+    <PostBuildEvent>
+      <Command>cd $(ProjectDir)src\render\shaders\
+call $(ProjectDir)src\render\shaders\compile_shaders.bat
+cd $(ProjectDir)
+xcopy  $(ProjectDir)src\res\*  $(OutDir)res /s /y /i</Command>
+      <Message>Copy res folder to bin</Message>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
@@ -155,6 +169,13 @@
       <AdditionalDependencies>vulkan-1.lib;glfw3.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalOptions>/verbose:lib %(AdditionalOptions)</AdditionalOptions>
     </Link>
+    <PostBuildEvent>
+      <Command>cd $(ProjectDir)src\render\shaders\
+call $(ProjectDir)src\render\shaders\compile_shaders.bat
+cd $(ProjectDir)
+xcopy  $(ProjectDir)src\res\*  $(OutDir)res /s /y /i</Command>
+      <Message>Copy res folder to bin</Message>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
@@ -176,6 +197,13 @@
       <AdditionalDependencies>vulkan-1.lib;glfw3.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalOptions>/verbose:lib %(AdditionalOptions)</AdditionalOptions>
     </Link>
+    <PostBuildEvent>
+      <Command>cd $(ProjectDir)src\render\shaders\
+call $(ProjectDir)src\render\shaders\compile_shaders.bat
+cd $(ProjectDir)
+xcopy  $(ProjectDir)src\res\*  $(OutDir)res /s /y /i</Command>
+      <Message>Copy res folder to bin</Message>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />

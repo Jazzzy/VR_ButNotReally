@@ -67,5 +67,7 @@ namespace config {
 		constexpr auto queue_amount = 1;
 	}
 
+	constexpr auto resource_path{ "./res/" };
+	constexpr auto shader_path{ "./res/shaders/" };
 
 }
