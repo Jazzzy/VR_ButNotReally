@@ -293,6 +293,16 @@ private:
 	*/
 	auto createSwapChain() -> void;
 
+	/**
+	Creates an image view for each image in the swap chain so
+	we can use them as color targets later.
+	
+	@see m_swap_chain_image_views
+	*/
+	auto createImageViews() -> void;
+
+
+
 
 	/* ---------------------------------------------------------------------------------------------- */
 	/* ---------------------------------------- DATA MEMBERS ---------------------------------------- */
@@ -323,6 +333,8 @@ private:
 	VkFormat m_swap_chain_image_format{};
 
 	VkExtent2D m_swap_chain_extent{};
+
+	std::vector<VkImageView> m_swap_chain_image_views{};
 
 };
 

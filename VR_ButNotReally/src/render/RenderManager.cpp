@@ -45,6 +45,7 @@ auto RenderManager::initVulkan() noexcept(false) -> void {
 	pickPhysicalDevice();
 	createLogicalDevice();
 	createSwapChain();
+	createImageViews();
 }
 
 auto RenderManager::loopIteration() noexcept -> void {
@@ -52,6 +53,9 @@ auto RenderManager::loopIteration() noexcept -> void {
 }
 
 auto RenderManager::cleanup() noexcept -> void {
+	for (const auto& view : m_swap_chain_image_views) {
+		vkDestroyImageView(m_device, view, nullptr);
+	}
 	vkDestroySwapchainKHR(m_device, m_swap_chain, nullptr);
 	vkDestroyDevice(m_device, nullptr);
 	destroyDebugReportCallbackEXT(m_instance, m_debug_callback, nullptr);
@@ -355,7 +359,7 @@ auto RenderManager::createSurface() -> void {
 	}
 #endif
 
-}
+	}
 
 auto RenderManager::pickPhysicalDevice() -> void {
 
@@ -747,6 +751,33 @@ auto RenderManager::createSwapChain() -> void {
 	*/
 	m_swap_chain_image_format = surface_format.format;
 	m_swap_chain_extent = extent;
+}
+
+auto RenderManager::createImageViews() -> void {
+
+	m_swap_chain_image_views.resize(m_swap_chain_images.size());
+
+	for (size_t i = 0; i < m_swap_chain_image_views.size(); i++) {
+		auto create_info = VkImageViewCreateInfo{};
+		create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+		create_info.flags;
+		create_info.image = m_swap_chain_images[i];
+		create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+		create_info.format = m_swap_chain_image_format;
+		create_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+		create_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+		create_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+		create_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+		create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		create_info.subresourceRange.baseArrayLayer = 0;
+		create_info.subresourceRange.layerCount = 1;
+		create_info.subresourceRange.baseMipLevel = 0;
+		create_info.subresourceRange.levelCount = 1;
+
+		if (vkCreateImageView(m_device, &create_info, nullptr, &m_swap_chain_image_views[i]) != VK_SUCCESS) {
+			throw new std::runtime_error("Couldn't create an image view for an image in the swap chain");
+		}
+	}
 }
 
 
