@@ -20,7 +20,6 @@ auto readFileToChars(const std::string& name)->std::vector<char> {
 		throw std::runtime_error(ss.str());
 	}
 
-
 	auto file_size = gsl::narrow<size_t>(file.tellg());
 	auto buffer = std::vector<char>(file_size);
 
