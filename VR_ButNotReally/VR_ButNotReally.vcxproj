@@ -30,6 +30,11 @@
     <ClInclude Include="src\render\RenderManager.h" />
     <ClInclude Include="src\utils\Utils.h" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="src\render\shaders\triangle.bat" />
+    <None Include="src\render\shaders\triangle.frag" />
+    <None Include="src\render\shaders\triangle.vert" />
+  </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>15.0</VCProjectVersion>
     <ProjectGuid>{af2ad4ff-0746-4ded-9272-1800283dd1de}</ProjectGuid>

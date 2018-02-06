@@ -46,6 +46,7 @@ auto RenderManager::initVulkan() noexcept(false) -> void {
 	createLogicalDevice();
 	createSwapChain();
 	createImageViews();
+	createGraphicsPipeline();
 }
 
 auto RenderManager::loopIteration() noexcept -> void {
@@ -778,6 +779,12 @@ auto RenderManager::createImageViews() -> void {
 			throw new std::runtime_error("Couldn't create an image view for an image in the swap chain");
 		}
 	}
+}
+
+auto RenderManager::createGraphicsPipeline() -> void {
+
+	//@@DOING: Call readFileToChars when it's done
+
 }
 
 

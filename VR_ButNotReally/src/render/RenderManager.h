@@ -301,7 +301,11 @@ private:
 	*/
 	auto createImageViews() -> void;
 
-
+	/**
+	Creates the graphics pipeline (or pipelines) that will be used to render
+	our scene.
+	*/
+	auto createGraphicsPipeline() -> void;
 
 
 	/* ---------------------------------------------------------------------------------------------- */
