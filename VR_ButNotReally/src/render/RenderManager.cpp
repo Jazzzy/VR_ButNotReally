@@ -46,6 +46,7 @@ auto RenderManager::initVulkan() noexcept(false) -> void {
 	createLogicalDevice();
 	createSwapChain();
 	createImageViews();
+	createRenderPass();
 	createGraphicsPipeline();
 }
 
@@ -54,6 +55,9 @@ auto RenderManager::loopIteration() noexcept -> void {
 }
 
 auto RenderManager::cleanup() noexcept -> void {
+	vkDestroyPipeline(m_device, m_pipeline, nullptr);
+	vkDestroyPipelineLayout(m_device, m_pipeline_layout, nullptr);
+	vkDestroyRenderPass(m_device, m_render_pass, nullptr);
 	for (const auto& view : m_swap_chain_image_views) {
 		vkDestroyImageView(m_device, view, nullptr);
 	}
@@ -249,7 +253,7 @@ auto VKAPI_ATTR VKAPI_CALL RenderManager::debugReportCallback(
 	void*                                       user_data
 ) -> VkBool32 {
 
-	std::cerr << "Validation Layer Message [" << layer_prefix << "]: ";
+	std::cerr << "\tVALIDATION LAYER MESSAGE [" << layer_prefix << "]: ";
 
 	if ((flags & VK_DEBUG_REPORT_DEBUG_BIT_EXT) != 0) {
 		std::cerr << "[DEBUG: " << msg_code << "]: " << msg << std::endl;
@@ -401,8 +405,10 @@ auto RenderManager::pickPhysicalDevice() -> void {
 		throw std::runtime_error("We cannot continue because there is no suitable physical device (GPU)");
 	}
 
-	std::cout << "The selected physical device is:" << std::endl << m_physical_device << std::endl;
+	vkGetPhysicalDeviceProperties(m_physical_device, &m_physical_device_properties);
+	vkGetPhysicalDeviceFeatures(m_physical_device, &m_physical_device_features);
 
+	std::cout << "The selected physical device is:" << std::endl << m_physical_device << std::endl;
 }
 
 auto RenderManager::physicalDeviceSuitability(const VkPhysicalDevice & device) const noexcept -> std::tuple<bool, int> {
@@ -426,7 +432,10 @@ auto RenderManager::physicalDeviceSuitability(const VkPhysicalDevice & device) c
 	}
 
 	/* - Checking if something makes us mark the device as not suitable - */
-	if (!features.geometryShader || !family_indices.isComplete() || !device_extensions_supported || !swap_chain_suitable) {
+	if (!features.geometryShader ||
+		!family_indices.isComplete() ||
+		!device_extensions_supported ||
+		!swap_chain_suitable) {
 		return std::make_tuple(false, 0);
 	}
 
@@ -501,7 +510,7 @@ auto RenderManager::createLogicalDevice() -> void {
 
 	for (auto queue_familie : unique_queue_families) {
 		auto queue_create_info = VkDeviceQueueCreateInfo{};
-		queue_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+		queue_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
 		queue_create_info.queueFamilyIndex = queue_familie;
 		queue_create_info.queueCount = config::gpu::queue_amount;
 		queue_create_info.pQueuePriorities = &queue_priority;
@@ -781,6 +790,49 @@ auto RenderManager::createImageViews() -> void {
 	}
 }
 
+auto RenderManager::createRenderPass() -> void {
+
+	std::cout << "Creating Render Pass" << std::endl;
+
+
+	auto color_attachment_description = VkAttachmentDescription{};
+	color_attachment_description.format = m_swap_chain_image_format;
+	/*
+	This is also relevant for implementing multisampling
+	*/
+	color_attachment_description.samples = VK_SAMPLE_COUNT_1_BIT;
+	color_attachment_description.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	color_attachment_description.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+	color_attachment_description.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	color_attachment_description.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	color_attachment_description.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	color_attachment_description.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+	auto color_attachment_reference = VkAttachmentReference{};
+	color_attachment_reference.attachment = 0;
+	color_attachment_reference.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+	auto subpass_description = VkSubpassDescription{};
+	subpass_description.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+	subpass_description.colorAttachmentCount = 1;
+	subpass_description.pColorAttachments = &color_attachment_reference;
+
+	auto render_pass_create_info = VkRenderPassCreateInfo{};
+	render_pass_create_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+	render_pass_create_info.attachmentCount = 1;
+	render_pass_create_info.pAttachments = &color_attachment_description;
+	render_pass_create_info.subpassCount = 1;
+	render_pass_create_info.pSubpasses = &subpass_description;
+
+	if (vkCreateRenderPass(m_device, &render_pass_create_info, nullptr, &m_render_pass) != VK_SUCCESS) {
+		throw std::runtime_error("We could't create a render pass");
+	}
+	std::cout << "\tRender Pass Created" << std::endl << std::endl;
+
+
+}
+
+
 auto RenderManager::createGraphicsPipeline() -> void {
 
 
@@ -788,14 +840,12 @@ auto RenderManager::createGraphicsPipeline() -> void {
 	auto frag_shader_code = readFileToChars(config::shader_path + "triangle_frag.spv");
 
 
-	std::cout << " - Creating vertex shader module " << std::endl;
 	auto vert_shader_module = createShaderModule(vert_shader_code);
-	std::cout << "\tDone" << std::endl << std::endl;
 
-	std::cout << " - Creating fragment shader module " << std::endl;
 	auto frag_shader_module = createShaderModule(frag_shader_code);
-	std::cout << "\tDone" << std::endl << std::endl;
 
+
+	std::cout << "Creating Graphics Pipeline" << std::endl;
 
 	auto vert_shader_stage_info = VkPipelineShaderStageCreateInfo{};
 	vert_shader_stage_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -821,14 +871,175 @@ auto RenderManager::createGraphicsPipeline() -> void {
 	const VkPipelineShaderStageCreateInfo shader_stages[] =
 	{ vert_shader_stage_info, frag_shader_stage_info };
 
-	//@@DOING: Setting up fixed functions of the pipeline: https://vulkan-tutorial.com/Drawing_a_triangle/Graphics_pipeline_basics/Fixed_functions
+	/* We will modify this later when we deal with the vertex buffer */
+	auto vertex_input_create_info = VkPipelineVertexInputStateCreateInfo{};
+	vertex_input_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+	vertex_input_create_info.vertexBindingDescriptionCount = 0;
+	vertex_input_create_info.pVertexBindingDescriptions = nullptr;
+	vertex_input_create_info.vertexAttributeDescriptionCount = 0;
+	vertex_input_create_info.pVertexAttributeDescriptions = nullptr;
 
+	auto input_assembly_create_info = VkPipelineInputAssemblyStateCreateInfo{};
+	input_assembly_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+	input_assembly_create_info.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+	input_assembly_create_info.primitiveRestartEnable = VK_FALSE;
+
+	auto viewport = VkViewport{};
+	viewport.x = 0.0f;
+	viewport.y = 0.0f;
+	viewport.width = gsl::narrow<float>(m_swap_chain_extent.width);
+	viewport.height = gsl::narrow<float>(m_swap_chain_extent.height);
+	viewport.minDepth = 0.0f;
+	viewport.maxDepth = 1.0f;
+
+	auto scissor = VkRect2D{};
+	scissor.offset = { 0, 0 };
+	scissor.extent = VkExtent2D{ m_swap_chain_extent };
+
+
+	auto viewport_create_info = VkPipelineViewportStateCreateInfo{};
+	viewport_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+	viewport_create_info.viewportCount = 1;
+	viewport_create_info.pViewports = &viewport;
+	viewport_create_info.scissorCount = 1;
+	viewport_create_info.pScissors = &scissor;
+
+	auto rasterizer_create_info = VkPipelineRasterizationStateCreateInfo{};
+	rasterizer_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+	rasterizer_create_info.depthClampEnable = VK_FALSE;
+	rasterizer_create_info.rasterizerDiscardEnable = VK_FALSE;
+	/*
+	Other options for polygonMode are LINE or POINT but these require a GPU feature
+	*/
+	rasterizer_create_info.polygonMode = VK_POLYGON_MODE_FILL;
+	rasterizer_create_info.lineWidth = 1.0f;
+	rasterizer_create_info.cullMode = VK_CULL_MODE_BACK_BIT;
+	rasterizer_create_info.frontFace = VK_FRONT_FACE_CLOCKWISE;
+	rasterizer_create_info.depthBiasEnable = VK_FALSE;
+	rasterizer_create_info.depthBiasConstantFactor = 0.0f;
+	rasterizer_create_info.depthBiasSlopeFactor = 0.0f;
+	rasterizer_create_info.depthBiasSlopeFactor = 0.0f;
+
+
+	auto multisampling_create_info = VkPipelineMultisampleStateCreateInfo{};
+	multisampling_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+	/*
+	We could activate 4XMSAA if we support it with the following code:
+
+	if ((m_physical_device_properties.limits.framebufferColorSampleCounts & VK_SAMPLE_COUNT_4_BIT) != 0) {
+
+		multisampling_create_info.rasterizationSamples = VK_SAMPLE_COUNT_4_BIT;
+
+		. . .
+	}else{	// No MSAA
+
+		//What we already do
+
+	}
+
+	@see createRenderPass
+	*/
+	multisampling_create_info.sampleShadingEnable = VK_FALSE;
+	multisampling_create_info.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+	multisampling_create_info.minSampleShading = 1.0f;
+	multisampling_create_info.pSampleMask = nullptr;
+	multisampling_create_info.alphaToCoverageEnable = VK_FALSE;
+	multisampling_create_info.alphaToOneEnable = VK_FALSE;
+
+	/*
+	We can use:
+
+	auto depth_stencil_create_info = VkPipelineDepthStencilStateCreateInfo{};
+
+	When we want to use a depth or stencil buffer.
+	*/
+
+	auto color_blend_attachment_state = VkPipelineColorBlendAttachmentState{};
+	color_blend_attachment_state.colorWriteMask =
+		VK_COLOR_COMPONENT_R_BIT |
+		VK_COLOR_COMPONENT_G_BIT |
+		VK_COLOR_COMPONENT_B_BIT |
+		VK_COLOR_COMPONENT_A_BIT;
+	/*
+	We set the parameters for alpha blending
+	*/
+	color_blend_attachment_state.blendEnable = VK_TRUE;
+	color_blend_attachment_state.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+	color_blend_attachment_state.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+	color_blend_attachment_state.colorBlendOp = VK_BLEND_OP_ADD;
+	color_blend_attachment_state.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+	color_blend_attachment_state.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+	color_blend_attachment_state.alphaBlendOp = VK_BLEND_OP_ADD;
+
+	auto color_blend_create_info = VkPipelineColorBlendStateCreateInfo{};
+	color_blend_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+	color_blend_create_info.logicOpEnable = VK_FALSE;
+	color_blend_create_info.logicOp = VK_LOGIC_OP_COPY;
+	color_blend_create_info.attachmentCount = 1;
+	color_blend_create_info.pAttachments = &color_blend_attachment_state;
+	color_blend_create_info.blendConstants[0] = 0.0f;
+	color_blend_create_info.blendConstants[1] = 0.0f;
+	color_blend_create_info.blendConstants[2] = 0.0f;
+	color_blend_create_info.blendConstants[3] = 0.0f;
+
+
+	const VkDynamicState dynamic_states[] = {
+		VK_DYNAMIC_STATE_VIEWPORT,
+		VK_DYNAMIC_STATE_LINE_WIDTH
+	};
+
+	auto dynamic_state_create_info = VkPipelineDynamicStateCreateInfo{};
+	dynamic_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+	dynamic_state_create_info.dynamicStateCount = 2;
+	[[gsl::suppress(bounds.3)]]{
+	dynamic_state_create_info.pDynamicStates = dynamic_states;
+	}
+
+	auto pipeline_layout_create_info = VkPipelineLayoutCreateInfo{};
+	pipeline_layout_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+	pipeline_layout_create_info.setLayoutCount = 0;
+	pipeline_layout_create_info.pSetLayouts = nullptr;
+	pipeline_layout_create_info.pushConstantRangeCount = 0;
+	pipeline_layout_create_info.pPushConstantRanges = nullptr;
+
+	if (vkCreatePipelineLayout(m_device, &pipeline_layout_create_info, nullptr, &m_pipeline_layout) != VK_SUCCESS) {
+		throw std::runtime_error("We couldn't create a pipeline layout");
+	}
+
+	auto pipeline_create_info = VkGraphicsPipelineCreateInfo{};
+	pipeline_create_info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+	pipeline_create_info.stageCount = 2;
+	[[gsl::suppress(bounds.3)]]{
+	pipeline_create_info.pStages = shader_stages;
+	}
+	pipeline_create_info.pVertexInputState = &vertex_input_create_info;
+	pipeline_create_info.pInputAssemblyState = &input_assembly_create_info;
+	pipeline_create_info.pViewportState = &viewport_create_info;
+	pipeline_create_info.pRasterizationState = &rasterizer_create_info;
+	pipeline_create_info.pMultisampleState = &multisampling_create_info;
+	pipeline_create_info.pDepthStencilState = nullptr;
+	pipeline_create_info.pColorBlendState = &color_blend_create_info;
+	pipeline_create_info.pDynamicState = nullptr;
+	pipeline_create_info.layout = m_pipeline_layout;
+	pipeline_create_info.renderPass = m_render_pass;
+	pipeline_create_info.subpass = 0;
+	pipeline_create_info.basePipelineHandle = VK_NULL_HANDLE;
+	pipeline_create_info.basePipelineIndex = -1;
+
+	if (vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipeline_create_info, nullptr, &m_pipeline)
+		!= VK_SUCCESS) {
+		throw std::runtime_error("We couldn't create a graphics pipeline");
+	}
+	std::cout << "\tGraphics Pipeline Created" << std::endl << std::endl;
 
 	vkDestroyShaderModule(m_device, vert_shader_module, nullptr);
 	vkDestroyShaderModule(m_device, frag_shader_module, nullptr);
+
 }
 
 auto RenderManager::createShaderModule(const std::vector<char>& code) const -> VkShaderModule {
+	std::cout << "Creating Shader Module " << std::endl;
+
 	auto create_info = VkShaderModuleCreateInfo{};
 	create_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
 	create_info.codeSize = code.size();
@@ -840,6 +1051,8 @@ auto RenderManager::createShaderModule(const std::vector<char>& code) const -> V
 	if (vkCreateShaderModule(m_device, &create_info, nullptr, &shader_module) != VK_SUCCESS) {
 		throw std::runtime_error("We couldn't create a shader module");
 	}
+
+	std::cout << "\tShader Module Created" << std::endl << std::endl;
 
 	return shader_module;
 

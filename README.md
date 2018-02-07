@@ -20,6 +20,7 @@ The things that have been implemented so far are the following:
 * Implemented visualization, processing, selection and creatiton of necesssary queues and logical devices. 
 * Implemented full custom swap chain configuration and selection. Targeting a triple buffer architecture.
 * Implemented loading of simple shaders and creation of shader modules for said shaders.
+* Implemented render passes and pipeline creation.
 
 
 

@@ -27,7 +27,7 @@ auto readFileToChars(const std::string& name)->std::vector<char> {
 	file.read(buffer.data(), file_size);
 	file.close();
 
-	std::cout << " - Reading file [" << name << "] with size: " << buffer.size() << std::endl << std::endl;
+	std::cout << "Reading file [" << name << "] with size: " << buffer.size() << std::endl << std::endl;
 
 	return buffer;
 }

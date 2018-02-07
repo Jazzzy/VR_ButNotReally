@@ -204,6 +204,8 @@ private:
 	available on the system for this application.
 
 	@see m_physical_device
+	@see m_physical_device_properties
+	@see m_physical_device_features
 	*/
 	auto pickPhysicalDevice() -> void;
 
@@ -302,8 +304,19 @@ private:
 	auto createImageViews() -> void;
 
 	/**
+	Creates the render pass that will be used to then create
+	the graphics pipeline.
+
+	@see m_render_pass
+	*/
+	auto createRenderPass() -> void;
+
+	/**
 	Creates the graphics pipeline (or pipelines) that will be used to render
 	our scene.
+
+	@see m_pipeline_layout
+	@see m_pipeline
 	*/
 	auto createGraphicsPipeline() -> void;
 
@@ -332,6 +345,10 @@ private:
 
 	VkPhysicalDevice m_physical_device = VK_NULL_HANDLE;
 
+	VkPhysicalDeviceProperties m_physical_device_properties{};
+
+	VkPhysicalDeviceFeatures m_physical_device_features{};
+
 	VkDevice m_device{};
 
 	VkQueue m_graphics_queue{};
@@ -347,6 +364,12 @@ private:
 	VkExtent2D m_swap_chain_extent{};
 
 	std::vector<VkImageView> m_swap_chain_image_views{};
+
+	VkRenderPass m_render_pass{};
+
+	VkPipelineLayout m_pipeline_layout{};
+
+	VkPipeline m_pipeline{};
 
 };
 
