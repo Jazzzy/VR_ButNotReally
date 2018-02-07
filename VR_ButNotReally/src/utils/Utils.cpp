@@ -12,7 +12,7 @@ auto pressToContinue() noexcept -> void { system("read"); }
 #endif
 
 auto readFileToChars(const std::string& name)->std::vector<char> {
-	auto file = std::ifstream(name, std::ios::ate, std::ios::binary);
+	auto file = std::ifstream(name, std::ios::ate | std::ios::binary);
 
 	if (!file.is_open()) {
 		auto ss = std::stringstream{};
