@@ -294,11 +294,11 @@ private:
 	@see m_swap_chain
 	*/
 	auto createSwapChain() -> void;
-	
+
 	/**
 	Creates an image view for each image in the swap chain so
 	we can use them as color targets later.
-	
+
 	@see m_swap_chain_image_views
 	*/
 	auto createImageViews() -> void;
@@ -323,11 +323,59 @@ private:
 	/**
 	Creates a shader module based on the code provided and wraps it up
 	in the VkShaderModule struct
-	
-	@see VkShaderModule
-	*/
-	auto createShaderModule(const std::vector<char>& code) const -> VkShaderModule;
 
+	@see VkShaderModule
+	@param An array of characters with the code for the shader
+	@return The shader module created based on the shader code
+	*/
+	auto createShaderModule(const std::vector<char>& code) const->VkShaderModule;
+
+	/**
+	Creates the framebuffersto draw to during render time
+
+	@see m_swap_chain_framebuffers
+	*/
+	auto createFramebuffers() ->  void;
+
+	/**
+	Creates the command pool that contains the command buffers to 
+	draw to during render time.
+
+	@see m_command_pool
+	*/
+	auto createCommandPool() ->  void;
+
+	/**
+	Creates the command buffers that contain the commands to
+	draw to during render time.
+
+	@see m_command_buffers
+	*/
+	auto createCommandBuffers() ->  void;
+
+	/**
+	Creates the drawing commands into the command buffers
+
+	@see m_command_buffers
+	*/
+	auto recordCommandBuffers() -> void;
+
+	/**
+	Creates the semaphores necessary for synchronization of 
+	the rendering phase.
+	
+	@see m_image_available_semaphore
+	@see m_render_finished_semaphore
+	*/
+	auto createSemaphores() -> void;
+
+
+	/**
+	Renders a frame to the screen. It can be called after
+	updating the application state to use the CPU to do that
+	while the previous frame is being rendered.
+	*/
+	[[gsl::suppress(bounds.3)]] auto drawFrame() -> void;
 
 	/* ---------------------------------------------------------------------------------------------- */
 	/* ---------------------------------------- DATA MEMBERS ---------------------------------------- */
@@ -370,6 +418,17 @@ private:
 	VkPipelineLayout m_pipeline_layout{};
 
 	VkPipeline m_pipeline{};
+
+	std::vector<VkFramebuffer> m_swap_chain_framebuffers{};
+
+	VkCommandPool m_command_pool{};
+
+	std::vector<VkCommandBuffer> m_command_buffers{};
+
+	VkSemaphore m_image_available_semaphore{};
+
+	VkSemaphore m_render_finished_semaphore{};
+
 
 };
 

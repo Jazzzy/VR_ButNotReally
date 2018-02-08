@@ -70,4 +70,6 @@ namespace config {
 	const auto resource_path = std::string{ "./res/" };
 	const auto shader_path = std::string{ "./res/shaders/" };
 
+	const auto clear_color = VkClearValue{ 0.0f, 0.0f, 0.0f, 1.0f };
+
 }

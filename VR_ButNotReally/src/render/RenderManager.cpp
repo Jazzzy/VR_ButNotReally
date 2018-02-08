@@ -48,25 +48,51 @@ auto RenderManager::initVulkan() noexcept(false) -> void {
 	createImageViews();
 	createRenderPass();
 	createGraphicsPipeline();
+	createFramebuffers();
+	createCommandPool();
+	createCommandBuffers();
+	recordCommandBuffers();
+	createSemaphores();
 }
 
 auto RenderManager::loopIteration() noexcept -> void {
 	glfwPollEvents();
+	drawFrame();
 }
 
 auto RenderManager::cleanup() noexcept -> void {
+	vkDeviceWaitIdle(m_device);
+
+	vkDestroySemaphore(m_device, m_image_available_semaphore, nullptr);
+	vkDestroySemaphore(m_device, m_render_finished_semaphore, nullptr);
+
+	vkDestroyCommandPool(m_device, m_command_pool, nullptr);
+
+	for (const auto& framebuffer : m_swap_chain_framebuffers) {
+		vkDestroyFramebuffer(m_device, framebuffer, nullptr);
+	}
+
 	vkDestroyPipeline(m_device, m_pipeline, nullptr);
 	vkDestroyPipelineLayout(m_device, m_pipeline_layout, nullptr);
+	
 	vkDestroyRenderPass(m_device, m_render_pass, nullptr);
+	
 	for (const auto& view : m_swap_chain_image_views) {
 		vkDestroyImageView(m_device, view, nullptr);
 	}
+	
 	vkDestroySwapchainKHR(m_device, m_swap_chain, nullptr);
+	
 	vkDestroyDevice(m_device, nullptr);
+	
 	destroyDebugReportCallbackEXT(m_instance, m_debug_callback, nullptr);
+	
 	vkDestroySurfaceKHR(m_instance, m_surface, nullptr);
+	
 	vkDestroyInstance(m_instance, nullptr);
+	
 	m_window.reset();
+	
 	glfwTerminate();
 }
 
@@ -817,19 +843,31 @@ auto RenderManager::createRenderPass() -> void {
 	subpass_description.colorAttachmentCount = 1;
 	subpass_description.pColorAttachments = &color_attachment_reference;
 
+	auto subpass_dependency = VkSubpassDependency{};
+	subpass_dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+	subpass_dependency.dstSubpass = 0;
+	subpass_dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	subpass_dependency.srcAccessMask = 0;
+	subpass_dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	subpass_dependency.dstAccessMask =
+		VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
+		VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+
 	auto render_pass_create_info = VkRenderPassCreateInfo{};
 	render_pass_create_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
 	render_pass_create_info.attachmentCount = 1;
 	render_pass_create_info.pAttachments = &color_attachment_description;
 	render_pass_create_info.subpassCount = 1;
 	render_pass_create_info.pSubpasses = &subpass_description;
+	render_pass_create_info.dependencyCount = 1;
+	render_pass_create_info.pDependencies = &subpass_dependency;
 
 	if (vkCreateRenderPass(m_device, &render_pass_create_info, nullptr, &m_render_pass) != VK_SUCCESS) {
 		throw std::runtime_error("We could't create a render pass");
 	}
+
 	std::cout << "\tRender Pass Created" << std::endl << std::endl;
-
-
 }
 
 
@@ -1055,6 +1093,211 @@ auto RenderManager::createShaderModule(const std::vector<char>& code) const -> V
 	std::cout << "\tShader Module Created" << std::endl << std::endl;
 
 	return shader_module;
+
+}
+
+auto RenderManager::createFramebuffers() ->  void {
+
+	std::cout << "Creating Framebuffers " << std::endl;
+
+
+	m_swap_chain_framebuffers.resize(m_swap_chain_image_views.size());
+
+	for (size_t i = 0; i < m_swap_chain_image_views.size(); ++i) {
+		VkImageView attachments[] = { m_swap_chain_image_views[i] };
+
+		auto frame_buffer_create_info = VkFramebufferCreateInfo{};
+		frame_buffer_create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+		frame_buffer_create_info.renderPass = m_render_pass;
+		frame_buffer_create_info.attachmentCount = 1;
+		[[gsl::suppress(bounds.3)]]{
+		frame_buffer_create_info.pAttachments = attachments;
+		}
+		frame_buffer_create_info.width = m_swap_chain_extent.width;
+		frame_buffer_create_info.height = m_swap_chain_extent.height;
+		frame_buffer_create_info.layers = 1;
+
+		if (vkCreateFramebuffer(m_device,
+			&frame_buffer_create_info,
+			nullptr,
+			&m_swap_chain_framebuffers[i]) != VK_SUCCESS) {
+			throw std::runtime_error("We couldn't create a necessary frame buffer");
+		}
+
+	}
+
+	std::cout << "\tFramebuffers Created" << std::endl << std::endl;
+
+
+}
+
+auto RenderManager::createCommandPool() ->  void {
+	std::cout << "Creating Command Pool " << std::endl;
+
+	auto command_pool_create_info = VkCommandPoolCreateInfo{};
+	command_pool_create_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	command_pool_create_info.queueFamilyIndex = m_queue_family_indices.graphics_family;
+	/*
+	For the flags we could use:
+
+		VK_COMMAND_POOL_CREATE_TRANSIENT_BIT: If we are going to rerecord the command
+		buffer with new commands frequently
+
+		VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT: If we want to rerecord command
+		buffers individually (without resetting all together).
+
+	*/
+	command_pool_create_info.flags = 0;
+
+	if (vkCreateCommandPool(m_device, &command_pool_create_info, nullptr, &m_command_pool) != VK_SUCCESS) {
+		throw std::runtime_error("We couldn't create a command pool");
+	}
+
+	std::cout << "\tCommand Pool Created" << std::endl << std::endl;
+}
+
+auto RenderManager::createCommandBuffers() ->  void {
+	std::cout << "Creating Command Buffers " << std::endl;
+
+	m_command_buffers.resize(m_swap_chain_framebuffers.size());
+
+	auto alloc_info = VkCommandBufferAllocateInfo{};
+	alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	alloc_info.commandPool = m_command_pool;
+	/*
+	Level can have this values with this meaning:
+
+	VK_COMMAND_BUFFER_LEVEL_PRIMARY: Means that it can be executed directly
+	in a queue but it CANNOT be called from another command buffer.
+
+	VK_COMMAND_BUFFER_LEVEL_SECONDARY: Means that it CANNOT be executed in a
+	queue directly but it can be called from other primary command buffers.
+	*/
+	alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	alloc_info.commandBufferCount = gsl::narrow<uint>(m_command_buffers.size());
+
+	if (vkAllocateCommandBuffers(m_device, &alloc_info, m_command_buffers.data()) != VK_SUCCESS) {
+		throw std::runtime_error("We couldn't allocate the necessary command buffers");
+	}
+
+	std::cout << "\tCommand Buffers Created" << std::endl << std::endl;
+
+}
+
+auto RenderManager::recordCommandBuffers() -> void {
+	std::cout << "Recording Command Buffers " << std::endl;
+
+
+	for (size_t i = 0; i < m_command_buffers.size(); ++i) {
+		auto begin_info = VkCommandBufferBeginInfo{};
+		begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		begin_info.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
+		begin_info.pInheritanceInfo = nullptr;
+
+		vkBeginCommandBuffer(m_command_buffers[i], &begin_info);
+
+		auto render_info = VkRenderPassBeginInfo{};
+		render_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+		render_info.renderPass = m_render_pass;
+		render_info.framebuffer = m_swap_chain_framebuffers[i];
+		render_info.renderArea.offset = { 0, 0 };
+		render_info.renderArea.extent = m_swap_chain_extent;
+		render_info.clearValueCount = 1;
+		render_info.pClearValues = &config::clear_color;
+
+		vkCmdBeginRenderPass(m_command_buffers[i], &render_info, VK_SUBPASS_CONTENTS_INLINE);
+
+		{
+			vkCmdBindPipeline(m_command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
+
+			vkCmdDraw(m_command_buffers[i], 3, 1, 0, 0);
+		}
+
+		vkCmdEndRenderPass(m_command_buffers[i]);
+
+		if (vkEndCommandBuffer(m_command_buffers[i]) != VK_SUCCESS) {
+			throw std::runtime_error("We couldn't record a command buffer");
+		}
+
+	}
+
+	std::cout << "\tCommand Buffers Recorded" << std::endl << std::endl;
+}
+
+auto RenderManager::createSemaphores() -> void {
+
+	auto create_info = VkSemaphoreCreateInfo{};
+	create_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+	if ((vkCreateSemaphore(m_device, &create_info, nullptr, &m_image_available_semaphore) != VK_SUCCESS) ||
+		(vkCreateSemaphore(m_device, &create_info, nullptr, &m_render_finished_semaphore) != VK_SUCCESS)) {
+	
+		throw std::runtime_error("We couldn't create the semaphores necessary for rendering");
+
+	}
+
+
+}
+
+auto RenderManager::drawFrame() -> void {
+	uint image_index;
+
+	vkQueueWaitIdle(m_present_queue);
+
+	/*
+	@@TODO: Add "error" handling here.
+
+	The failure of this function does not represent that the
+	program should terminate.
+	*/
+	vkAcquireNextImageKHR(
+		m_device,
+		m_swap_chain,
+		/*
+		This is the timeout in ns for an image to become available
+		*/
+		std::numeric_limits<uint64_t>::max(),
+		m_image_available_semaphore,
+		VK_NULL_HANDLE,
+		&image_index);
+
+	auto submit_info = VkSubmitInfo{};
+	submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+
+	const VkSemaphore wait_semaphores[] = { m_image_available_semaphore };
+	const VkPipelineStageFlags wait_stages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+	submit_info.waitSemaphoreCount = 1;
+	submit_info.pWaitSemaphores = wait_semaphores;
+	submit_info.pWaitDstStageMask = wait_stages;
+	submit_info.commandBufferCount = 1;
+	submit_info.pCommandBuffers = &m_command_buffers[image_index];
+	VkSemaphore signal_semaphores[] = { m_render_finished_semaphore };
+	submit_info.signalSemaphoreCount = 1;
+	submit_info.pSignalSemaphores = signal_semaphores;
+
+
+	if (vkQueueSubmit(m_graphics_queue, 1, &submit_info, VK_NULL_HANDLE) != VK_SUCCESS) {
+		throw std::runtime_error("We couldn't submit our command buffer");
+	}
+
+	auto present_info = VkPresentInfoKHR{};
+	present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+	present_info.waitSemaphoreCount = 1;
+	present_info.pWaitSemaphores = signal_semaphores;
+	VkSwapchainKHR swap_chains[] = {m_swap_chain};
+	present_info.swapchainCount = 1;
+	present_info.pSwapchains = swap_chains;
+	present_info.pImageIndices = &image_index;
+	present_info.pResults = nullptr;
+
+
+	/*
+	@@TODO: Add "error" handling here.
+
+	The failure of this function does not represent that the
+	program should terminate.
+	*/
+	vkQueuePresentKHR(m_present_queue, &present_info); 
 
 }
 
