@@ -20,7 +20,7 @@ int main() {
 		}
 		catch (const std::exception& exception) {
 			std::cerr << exception.what() << std::endl;
-			std::cerr << "\nThe program will now be closed" << std::endl;
+			std::cerr << "\nThe program will now be closed since we cannot execute further" << std::endl;
 			pressToContinue();
 			return EXIT_FAILURE;
 		}
