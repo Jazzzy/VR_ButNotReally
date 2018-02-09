@@ -871,12 +871,14 @@ auto RenderManager::createRenderPass() -> void {
 }
 
 
+#include "./shaders/triangle_frag.hpp"
+#include "./shaders/triangle_vert.hpp"
+
+
 auto RenderManager::createGraphicsPipeline() -> void {
 
-
-	auto vert_shader_code = readFileToChars(config::shader_path + "triangle_vert.spv");
-	auto frag_shader_code = readFileToChars(config::shader_path + "triangle_frag.spv");
-
+	auto vert_shader_code = readBinaryArrayToChars(triangle_vert, triangle_vert_size);
+	auto frag_shader_code = readBinaryArrayToChars(triangle_frag, triangle_frag_size);
 
 	auto vert_shader_module = createShaderModule(vert_shader_code);
 

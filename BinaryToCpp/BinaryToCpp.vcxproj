@@ -18,29 +18,10 @@
       <Platform>x64</Platform>
     </ProjectConfiguration>
   </ItemGroup>
-  <ItemGroup>
-    <ClCompile Include="src\render\RenderUtils.cpp" />
-    <ClCompile Include="src\render\RenderManager.cpp" />
-    <ClCompile Include="src\Main.cpp" />
-    <ClCompile Include="src\utils\Utils.cpp" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="src\render\RenderUtils.h" />
-    <ClInclude Include="src\Configuration.h" />
-    <ClInclude Include="src\render\RenderManager.h" />
-    <ClInclude Include="src\render\shaders\triangle_frag.hpp" />
-    <ClInclude Include="src\render\shaders\triangle_vert.hpp" />
-    <ClInclude Include="src\utils\Utils.h" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="src\render\shaders\compile_shaders.bat" />
-    <None Include="src\render\shaders\triangle.frag" />
-    <None Include="src\render\shaders\triangle.vert" />
-  </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>15.0</VCProjectVersion>
-    <ProjectGuid>{af2ad4ff-0746-4ded-9272-1800283dd1de}</ProjectGuid>
-    <RootNamespace>VR_ButNotReally</RootNamespace>
+    <ProjectGuid>{2D9D022F-5965-4FC5-BADA-D755D7C8DB70}</ProjectGuid>
+    <RootNamespace>BinaryToCpp</RootNamespace>
     <WindowsTargetPlatformVersion>10.0.16299.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
@@ -91,146 +72,67 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <OutDir>$(ProjectDir)bin\$(Platform)\$(Configuration)\</OutDir>
     <IntDir>$(ProjectDir)bin\intermediates\$(Platform)\$(Configuration)\</IntDir>
-    <EnableCppCoreCheck>true</EnableCppCoreCheck>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <OutDir>$(ProjectDir)bin\$(Platform)\$(Configuration)\</OutDir>
     <IntDir>$(ProjectDir)bin\intermediates\$(Platform)\$(Configuration)\</IntDir>
-    <EnableCppCoreCheck>true</EnableCppCoreCheck>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <OutDir>$(ProjectDir)bin\$(Platform)\$(Configuration)\</OutDir>
     <IntDir>$(ProjectDir)bin\intermediates\$(Platform)\$(Configuration)\</IntDir>
-    <EnableCppCoreCheck>true</EnableCppCoreCheck>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <OutDir>$(ProjectDir)bin\$(Platform)\$(Configuration)\</OutDir>
     <IntDir>$(ProjectDir)bin\intermediates\$(Platform)\$(Configuration)\</IntDir>
-    <EnableCppCoreCheck>true</EnableCppCoreCheck>
   </PropertyGroup>
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
-    <ClCompile>
-      <WarningLevel>Level3</WarningLevel>
-      <Optimization>Disabled</Optimization>
-      <SDLCheck>true</SDLCheck>
-      <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>C:\dep\GSL\include\;C:\dep\VulkanSDK\1.0.65.1\Include;C:\dep\glfw\glfw-3.2.1.bin.WIN32\include;C:\dep\glm</AdditionalIncludeDirectories>
-      <LanguageStandard>stdcpplatest</LanguageStandard>
-    </ClCompile>
-    <Link>
-      <AdditionalLibraryDirectories>C:\dep\VulkanSDK\1.0.65.1\Lib32;C:\dep\glfw\glfw-3.2.1.bin.WIN32\lib-vc2015;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>vulkan-1.lib;glfw3.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalOptions>/verbose:lib %(AdditionalOptions)</AdditionalOptions>
-    </Link>
-    <PostBuildEvent>
-      <Command>
-      </Command>
-      <Message>
-      </Message>
-    </PostBuildEvent>
-    <PreBuildEvent>
-      <Command>cd $(ProjectDir)src\render\shaders\
-call $(ProjectDir)src\render\shaders\compile_shaders.bat
-cd $(ProjectDir)src\res
-cd $(ProjectDir)
-xcopy  $(ProjectDir)src\res\*  $(OutDir)res /s /y /i</Command>
-    </PreBuildEvent>
-  </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>C:\dep\GSL\include\;C:\dep\VulkanSDK\1.0.65.1\Include;C:\dep\glfw\glfw-3.2.1.bin.WIN64\include;C:\dep\glm</AdditionalIncludeDirectories>
-      <LanguageStandard>stdcpplatest</LanguageStandard>
     </ClCompile>
-    <Link>
-      <AdditionalLibraryDirectories>C:\dep\VulkanSDK\1.0.65.1\Lib;C:\dep\glfw\glfw-3.2.1.bin.WIN64\lib-vc2015;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>vulkan-1.lib;glfw3.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalOptions>/verbose:lib %(AdditionalOptions)</AdditionalOptions>
-    </Link>
-    <PostBuildEvent>
-      <Command>
-      </Command>
-      <Message>
-      </Message>
-    </PostBuildEvent>
-    <PreBuildEvent>
-      <Command>cd $(ProjectDir)src\render\shaders\
-call $(ProjectDir)src\render\shaders\compile_shaders.bat
-cd $(ProjectDir)src\res
-cd $(ProjectDir)
-xcopy  $(ProjectDir)src\res\*  $(OutDir)res /s /y /i</Command>
-    </PreBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <SDLCheck>true</SDLCheck>
+      <ConformanceMode>true</ConformanceMode>
+    </ClCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>C:\dep\GSL\include\;C:\dep\VulkanSDK\1.0.65.1\Include;C:\dep\glfw\glfw-3.2.1.bin.WIN32\include;C:\dep\glm</AdditionalIncludeDirectories>
-      <FunctionLevelLinking>true</FunctionLevelLinking>
-      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
-      <LanguageStandard>stdcpplatest</LanguageStandard>
     </ClCompile>
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <AdditionalLibraryDirectories>C:\dep\VulkanSDK\1.0.65.1\Lib32;C:\dep\glfw\glfw-3.2.1.bin.WIN32\lib-vc2015;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>vulkan-1.lib;glfw3.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalOptions>/verbose:lib %(AdditionalOptions)</AdditionalOptions>
     </Link>
-    <PostBuildEvent>
-      <Command>
-      </Command>
-      <Message>
-      </Message>
-    </PostBuildEvent>
-    <PreBuildEvent>
-      <Command>cd $(ProjectDir)src\render\shaders\
-call $(ProjectDir)src\render\shaders\compile_shaders.bat
-cd $(ProjectDir)src\res
-cd $(ProjectDir)
-xcopy  $(ProjectDir)src\res\*  $(OutDir)res /s /y /i</Command>
-    </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>C:\dep\GSL\include\;C:\dep\VulkanSDK\1.0.65.1\Include;C:\dep\glfw\glfw-3.2.1.bin.WIN64\include;C:\dep\glm</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>CODE_ANALYSIS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <FunctionLevelLinking>true</FunctionLevelLinking>
-      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
-      <LanguageStandard>stdcpplatest</LanguageStandard>
     </ClCompile>
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <AdditionalLibraryDirectories>C:\dep\VulkanSDK\1.0.65.1\Lib;C:\dep\glfw\glfw-3.2.1.bin.WIN64\lib-vc2015;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>vulkan-1.lib;glfw3.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalOptions>/verbose:lib %(AdditionalOptions)</AdditionalOptions>
     </Link>
-    <PostBuildEvent>
-      <Command>
-      </Command>
-      <Message>
-      </Message>
-    </PostBuildEvent>
-    <PreBuildEvent>
-      <Command>cd $(ProjectDir)src\render\shaders\
-call $(ProjectDir)src\render\shaders\compile_shaders.bat
-cd $(ProjectDir)src\res
-cd $(ProjectDir)
-xcopy  $(ProjectDir)src\res\*  $(OutDir)res /s /y /i</Command>
-    </PreBuildEvent>
   </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="src\Main.cpp" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
-  <ImportGroup Label="ExtensionTargets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
 </Project>
