@@ -70,3 +70,5 @@ The things that have been implemented so far are the following:
 
 -   Implemented drawing and presentation functionality that allows for CPU
     computing while the previous frame is rendering.
+
+-   Implemented custom precompilation process of shaders into SPIR-V Bytecode followed by an embedding process into the executable's source code making it self-contained while avoiding relying on certain file structure that contains the compiled shaders. 

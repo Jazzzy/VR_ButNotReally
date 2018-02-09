@@ -12,7 +12,7 @@ auto main(int argc, char** argv) -> int {
 		return EXIT_FAILURE;
 	}
 
-	auto file = std::wifstream(argv[1], std::ios::in | std::ios_base::binary);
+	auto file = std::wifstream(argv[1], std::ios::ate | std::ios::in | std::ios_base::binary);
 
 	file.imbue(std::locale(file.getloc(),
 		new std::codecvt_utf16<wchar_t, 0x10ffff, std::consume_header>));
@@ -22,10 +22,16 @@ auto main(int argc, char** argv) -> int {
 		return EXIT_FAILURE;
 	}
 
-	std::cout << "wchar_t " << argv[2] << "[] = {" << std::endl;
+	auto file_size = (size_t)(file.tellg());
+	auto buffer = std::vector<char>(file_size);
+	auto array_size = file_size / sizeof(wchar_t);
+
+	file.seekg(0);
+	
+	std::cout << "std::array<wchar_t, " << array_size  << "> " << argv[2] << " = {" << std::endl;
 
 	auto c = wchar_t{};
-	auto count = 1ll;
+	auto count = 0ll;
 	while (file.read(&c, 1)) {
 		std::cout << "0x" << std::setw(2) << std::setfill('0') << std::hex << int(c) << ", ";
 		if (!(++count % 10)) {
@@ -35,7 +41,7 @@ auto main(int argc, char** argv) -> int {
 
 	std::cout << "};" << std::endl << std::endl;
 
-	std::cout << "constexpr auto " << argv[2] << "_size = sizeof(" << argv[2] << ")/sizeof(*" << argv[2] << ");" << std::endl;
+	//std::cout << "constexpr auto " << argv[2] << "_size = sizeof(" << argv[2] << ")/sizeof(*" << argv[2] << ");" << std::endl;
 
 	return EXIT_SUCCESS;
 

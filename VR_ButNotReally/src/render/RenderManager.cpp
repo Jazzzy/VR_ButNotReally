@@ -877,8 +877,8 @@ auto RenderManager::createRenderPass() -> void {
 
 auto RenderManager::createGraphicsPipeline() -> void {
 
-	auto vert_shader_code = readBinaryArrayToChars(triangle_vert, triangle_vert_size);
-	auto frag_shader_code = readBinaryArrayToChars(triangle_frag, triangle_frag_size);
+	auto vert_shader_code = readBinaryArrayToChars(triangle_vert);
+	auto frag_shader_code = readBinaryArrayToChars(triangle_frag);
 
 	auto vert_shader_module = createShaderModule(vert_shader_code);
 
