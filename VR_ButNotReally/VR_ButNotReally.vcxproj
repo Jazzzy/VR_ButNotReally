@@ -131,9 +131,12 @@
     <PreBuildEvent>
       <Command>cd $(ProjectDir)src\render\shaders\
 call $(ProjectDir)src\render\shaders\compile_shaders.bat
-cd $(ProjectDir)src\res
 cd $(ProjectDir)
-xcopy  $(ProjectDir)src\res\*  $(OutDir)res /s /y /i</Command>
+echo.
+echo Copying all files from the /res directory to the executable location
+xcopy  $(ProjectDir)src\res\*  $(OutDir)res /s /y /i
+echo.
+echo.</Command>
     </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -159,9 +162,12 @@ xcopy  $(ProjectDir)src\res\*  $(OutDir)res /s /y /i</Command>
     <PreBuildEvent>
       <Command>cd $(ProjectDir)src\render\shaders\
 call $(ProjectDir)src\render\shaders\compile_shaders.bat
-cd $(ProjectDir)src\res
 cd $(ProjectDir)
-xcopy  $(ProjectDir)src\res\*  $(OutDir)res /s /y /i</Command>
+echo.
+echo Copying all files from the /res directory to the executable location
+xcopy  $(ProjectDir)src\res\*  $(OutDir)res /s /y /i
+echo.
+echo.</Command>
     </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -192,9 +198,12 @@ xcopy  $(ProjectDir)src\res\*  $(OutDir)res /s /y /i</Command>
     <PreBuildEvent>
       <Command>cd $(ProjectDir)src\render\shaders\
 call $(ProjectDir)src\render\shaders\compile_shaders.bat
-cd $(ProjectDir)src\res
 cd $(ProjectDir)
-xcopy  $(ProjectDir)src\res\*  $(OutDir)res /s /y /i</Command>
+echo.
+echo Copying all files from the /res directory to the executable location
+xcopy  $(ProjectDir)src\res\*  $(OutDir)res /s /y /i
+echo.
+echo.</Command>
     </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -226,9 +235,12 @@ xcopy  $(ProjectDir)src\res\*  $(OutDir)res /s /y /i</Command>
     <PreBuildEvent>
       <Command>cd $(ProjectDir)src\render\shaders\
 call $(ProjectDir)src\render\shaders\compile_shaders.bat
-cd $(ProjectDir)src\res
 cd $(ProjectDir)
-xcopy  $(ProjectDir)src\res\*  $(OutDir)res /s /y /i</Command>
+echo.
+echo Copying all files from the /res directory to the executable location
+xcopy  $(ProjectDir)src\res\*  $(OutDir)res /s /y /i
+echo.
+echo.</Command>
     </PreBuildEvent>
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
