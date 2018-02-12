@@ -28,13 +28,14 @@ auto RenderManager::update() noexcept -> void {
 auto RenderManager::initWindow() noexcept -> void {
 	glfwInit();
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-	glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 
 	m_window = WindowPtr(glfwCreateWindow(
 		config::initial_window_width,
 		config::initial_window_heigth,
 		config::app_name, nullptr, nullptr));
 
+	glfwSetWindowUserPointer(m_window.get(), this);
+	glfwSetWindowSizeCallback(m_window.get(), RenderManager::onWindowsResized);
 
 }
 
@@ -55,33 +56,49 @@ auto RenderManager::initVulkan() noexcept(false) -> void {
 	createSemaphores();
 }
 
+auto RenderManager::recreateSwapChain() -> void {
+	auto width = 0;
+	auto height = 0;
+	glfwGetWindowSize(m_window.get(), &width, &height);
+	/*
+	When the window is minimized we don't need to recreate the swap chain.
+	In those cases the width and height will be 0.
+	*/
+	if (width == 0 || height == 0) {
+		return;
+	}
+
+	vkDeviceWaitIdle(m_device);
+
+
+	/*
+	@Optimization: Create the new swapchain using the old one with the 
+	field "oldSwapChain" so we don't have to stop rendering.
+	*/
+	cleanupSwapChain();
+
+	createSwapChain();
+	createImageViews();
+	createRenderPass();
+	createGraphicsPipeline();
+	createFramebuffers();
+	createCommandBuffers();
+	recordCommandBuffers();
+}
+
+
 auto RenderManager::loopIteration() noexcept -> void {
 	glfwPollEvents();
 	drawFrame();
 }
 
 auto RenderManager::cleanup() noexcept -> void {
-	vkDeviceWaitIdle(m_device);
+	cleanupSwapChain();
 
 	vkDestroySemaphore(m_device, m_image_available_semaphore, nullptr);
 	vkDestroySemaphore(m_device, m_render_finished_semaphore, nullptr);
 
 	vkDestroyCommandPool(m_device, m_command_pool, nullptr);
-
-	for (const auto& framebuffer : m_swap_chain_framebuffers) {
-		vkDestroyFramebuffer(m_device, framebuffer, nullptr);
-	}
-
-	vkDestroyPipeline(m_device, m_pipeline, nullptr);
-	vkDestroyPipelineLayout(m_device, m_pipeline_layout, nullptr);
-	
-	vkDestroyRenderPass(m_device, m_render_pass, nullptr);
-	
-	for (const auto& view : m_swap_chain_image_views) {
-		vkDestroyImageView(m_device, view, nullptr);
-	}
-	
-	vkDestroySwapchainKHR(m_device, m_swap_chain, nullptr);
 	
 	vkDestroyDevice(m_device, nullptr);
 	
@@ -94,6 +111,31 @@ auto RenderManager::cleanup() noexcept -> void {
 	m_window.reset();
 	
 	glfwTerminate();
+}
+
+auto RenderManager::cleanupSwapChain() noexcept -> void {
+
+	for (const auto& framebuffer : m_swap_chain_framebuffers) {
+		vkDestroyFramebuffer(m_device, framebuffer, nullptr);
+	}
+
+	vkFreeCommandBuffers(
+		m_device,
+		m_command_pool,
+		gsl::narrow_cast<uint>(m_command_buffers.size()),
+		m_command_buffers.data());
+
+	vkDestroyPipeline(m_device, m_pipeline, nullptr);
+	vkDestroyPipelineLayout(m_device, m_pipeline_layout, nullptr);
+
+	vkDestroyRenderPass(m_device, m_render_pass, nullptr);
+
+	for (const auto& view : m_swap_chain_image_views) {
+		vkDestroyImageView(m_device, view, nullptr);
+	}
+
+	vkDestroySwapchainKHR(m_device, m_swap_chain, nullptr);
+
 }
 
 auto RenderManager::createInstance() noexcept(false) -> VkInstance {
@@ -670,9 +712,14 @@ auto RenderManager::pickSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities)
 		return capabilities.currentExtent;
 	}
 	else {
+		auto width = 0;
+		auto height = 0;
+
+		glfwGetWindowSize(m_window.get(), &width, &height);
+
 		auto extent = VkExtent2D{
-			config::initial_window_width,
-			config::initial_window_heigth
+			gsl::narrow<uint>(width),
+			gsl::narrow<uint>(height)
 		};
 
 		extent.width = std::max(capabilities.minImageExtent.width,
@@ -1246,13 +1293,7 @@ auto RenderManager::drawFrame() -> void {
 
 	vkQueueWaitIdle(m_present_queue);
 
-	/*
-	@@TODO: Add "error" handling here.
-
-	The failure of this function does not represent that the
-	program should terminate.
-	*/
-	vkAcquireNextImageKHR(
+	auto result = vkAcquireNextImageKHR(
 		m_device,
 		m_swap_chain,
 		/*
@@ -1262,6 +1303,14 @@ auto RenderManager::drawFrame() -> void {
 		m_image_available_semaphore,
 		VK_NULL_HANDLE,
 		&image_index);
+
+	if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+		recreateSwapChain();
+		return;
+	}
+	else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+		throw std::runtime_error("We couldn't acquire an image to render to");
+	}
 
 	auto submit_info = VkSubmitInfo{};
 	submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -1293,14 +1342,28 @@ auto RenderManager::drawFrame() -> void {
 	present_info.pResults = nullptr;
 
 
-	/*
-	@@TODO: Add "error" handling here.
+	result = vkQueuePresentKHR(m_present_queue, &present_info);
 
-	The failure of this function does not represent that the
-	program should terminate.
-	*/
-	vkQueuePresentKHR(m_present_queue, &present_info); 
+	if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+		recreateSwapChain();
+	}
+	else if (result != VK_SUCCESS ) {
+		throw std::runtime_error("We couldn't submit the presentation info to the queue");
+	}
 
+}
+
+auto RenderManager::onWindowsResized(GLFWwindow * window, int width, int height) -> void {
+
+	RenderManager* render_manager = nullptr;
+
+	[[gsl::suppress(type.1)]]{
+		render_manager = reinterpret_cast<RenderManager*>(glfwGetWindowUserPointer(window));
+	}
+
+	render_manager->recreateSwapChain();
+
+	std::cout << " - Window resized to (" << width << ", " << height << ")" << std::endl;
 }
 
 

@@ -73,9 +73,15 @@ private:
 
 	/**
 	Initializes all the Vulkan related components necessary for rendering to
-	the scree.
+	the screen.
 	*/
 	auto initVulkan() -> void;
+
+	/**
+	Recreates all the necessary members to create a new swap chain, for example
+	when resizing the window.
+	*/
+	auto recreateSwapChain() -> void;
 
 	/**
 	Internal function that represents one iteration of the loop that will
@@ -88,6 +94,12 @@ private:
 	mostly related to the Vulkan API and its resources.
 	*/
 	auto cleanup() noexcept -> void;
+
+	/**
+	Cleans up all the resources related to the swap chain, this is useful when
+	recreating the swap chain to be sure we are not leaking memory and resources.
+	*/
+	auto cleanupSwapChain() noexcept -> void;
 
 	/**
 	Creates a Vulkan instance based on the current configuration parameters.
@@ -376,6 +388,16 @@ private:
 	while the previous frame is being rendered.
 	*/
 	[[gsl::suppress(bounds.3)]] auto drawFrame() -> void;
+
+	/**
+	Handles the event of resizing the window to set up the appropriate
+	rendering parameters accordingly.
+
+	@param Reference to the window that has been resized
+	@param New width of the window
+	@param New height of the window
+	*/
+	auto static onWindowsResized(GLFWwindow * window, int width, int heigth) -> void;
 
 	/* ---------------------------------------------------------------------------------------------- */
 	/* ---------------------------------------- DATA MEMBERS ---------------------------------------- */
