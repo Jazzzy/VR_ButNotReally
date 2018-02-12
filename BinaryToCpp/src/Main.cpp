@@ -5,6 +5,10 @@
 #include <locale>
 #include <codecvt>
 
+/**
+Reads a binary file and creates a C++ valid array of wchars that
+can be included in a project to embed the binary content into source code.
+*/
 auto main(int argc, char** argv) -> int {
 
 	if (argc != 3) {
