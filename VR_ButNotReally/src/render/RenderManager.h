@@ -7,7 +7,6 @@
 #include <vector>
 #include <gsl/gsl>
 
-
 #define VK_USE_PLATFORM_WIN32_KHR
 #include <vulkan/vulkan.h>
 #define GLFW_INCLUDE_VULKAN
@@ -15,6 +14,41 @@
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3native.h>
 
+#ifdef max
+#undef max
+#endif
+#ifdef min
+#undef min
+#endif
+
+/*
+We define this in case we want to use VulkanMemoryAllocator's
+allocators.
+
+	- https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator
+
+Currently we are using the allocator by default so allocation of
+buffers and images without VMA_USE_ALLOCATOR could not be fully supported.
+*/
+#define VMA_USE_ALLOCATOR
+
+#ifdef VMA_USE_ALLOCATOR
+#include "vk_mem_alloc.h"
+
+struct AllocatedBuffer {
+	VkBuffer buffer{};
+	VmaAllocation allocation{};
+	VmaAllocationInfo allocation_info{};
+};
+
+#else
+
+struct AllocatedBuffer {
+	VkBuffer buffer{};
+	VkDeviceMemory memory{};
+};
+
+#endif
 
 #include "../utils/Utils.h"
 #include "./RenderUtils.h"
@@ -255,6 +289,13 @@ private:
 	auto createLogicalDevice() -> void;
 
 	/**
+	Creates the allocator used to reserve memory in vulkan
+	
+	@see m_vma_allocator
+	*/
+	auto createAllocator() ->void;
+	
+	/**
 	Checks if the physical device provided supports all the extensions required by our configuration
 
 	@param The physical device to check for extension support
@@ -374,16 +415,24 @@ private:
 	@param The sharing mode of the buffer (VK_SHARING_MODE_(EXCLUSIVE/CONCURRENT))
 	@param The family indices of the queues this buffer will be shared between if CONCURRENT, nullptr otherwise
 	@param The buffer handle we will populate
-	@param The device memory handle we will populate 
+	@param The device memory handle we will populate
 	*/
 	auto createBuffer(
 		VkDeviceSize size,
 		VkBufferUsageFlags usage,
+#ifdef VMA_USE_ALLOCATOR
+		VmaMemoryUsage allocation_usage,
+		VmaAllocationCreateFlags allocation_flags,
+#else
 		VkMemoryPropertyFlags properties,
+#endif
+		AllocatedBuffer& allocated_buffer,
 		VkSharingMode sharing_mode,
-		const std::vector<uint>* queue_family_indices,
-		VkBuffer& buffer,
-		VkDeviceMemory& buffer_memory) -> void;
+		const std::vector<uint>* queue_family_indices) -> void;
+
+	auto destroyBuffer(
+		AllocatedBuffer& allocated_buffer
+	) -> void;
 
 	/**
 	Creates the vertex buffer that will hold the vertices to render.
@@ -401,6 +450,15 @@ private:
 	@return Appropriate flags of the memory we can use.
 	*/
 	auto findMemoryType(uint type_filter, VkMemoryPropertyFlags properties)->uint;
+
+	/**
+	Copies the contents from one VkBuffer to another.
+
+	@param The source buffer
+	@param The destination buffer
+	@param The size of the memory to be copied
+	*/
+	auto copyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size) -> void;
 
 	/**
 	Creates the command buffers that contain the commands to
@@ -448,6 +506,10 @@ private:
 	/* ---------------------------------------- DATA MEMBERS ---------------------------------------- */
 	/* ---------------------------------------------------------------------------------------------- */
 
+#ifdef VMA_USE_ALLOCATOR
+	VmaAllocator m_vma_allocator{};
+#endif
+
 	WindowPtr m_window{};
 
 	VkInstance m_instance{};
@@ -469,6 +531,8 @@ private:
 	VkQueue m_graphics_queue{};
 
 	VkQueue m_present_queue{};
+
+	VkQueue m_transfer_queue{};
 
 	VkSwapchainKHR m_swap_chain{};
 
@@ -492,9 +556,7 @@ private:
 
 	VkCommandPool m_transfer_command_pool{};
 
-	VkBuffer m_vertex_buffer{};
-
-	VkDeviceMemory m_vertex_buffer_memory{};
+	AllocatedBuffer m_vertex_buffer{};
 
 	std::vector<VkCommandBuffer> m_command_buffers{};
 

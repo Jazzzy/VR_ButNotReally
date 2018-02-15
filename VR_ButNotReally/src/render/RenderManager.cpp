@@ -6,8 +6,18 @@
 #include <algorithm>
 #include <vulkan/vk_platform.h>
 #include "RenderData.h"
+
+#ifdef max
 #undef max
+#endif
+#ifdef min
 #undef min
+#endif
+
+#ifdef VMA_USE_ALLOCATOR
+#define VMA_IMPLEMENTATION
+#include "vk_mem_alloc.h"
+#endif
 
 RenderManager::RenderManager() : m_instance() {
 	initWindow();
@@ -46,12 +56,14 @@ auto RenderManager::initVulkan() noexcept(false) -> void {
 	createSurface();
 	pickPhysicalDevice();
 	createLogicalDevice();
+	createAllocator();
 	createSwapChain();
 	createImageViews();
 	createRenderPass();
 	createGraphicsPipeline();
 	createFramebuffers();
 	createGraphicsCommandPool();
+	createTransferCommandPool();
 	createVertexBuffer();
 	createCommandBuffers();
 	recordCommandBuffers();
@@ -71,7 +83,6 @@ auto RenderManager::recreateSwapChain() -> void {
 	}
 
 	vkDeviceWaitIdle(m_device);
-
 
 	/*
 	@Optimization: Create the new swapchain using the old one with the
@@ -95,19 +106,24 @@ auto RenderManager::loopIteration() noexcept -> void {
 }
 
 auto RenderManager::cleanup() noexcept -> void {
-	cleanupSwapChain();
+	vkDeviceWaitIdle(m_device);
 
+	cleanupSwapChain();
 
 	/**
 	@TODO @DOING: Check here why the buffer is still in use
 	*/
-	vkDestroyBuffer(m_device, m_vertex_buffer, nullptr);
-	vkFreeMemory(m_device, m_vertex_buffer_memory, nullptr);
+	destroyBuffer(m_vertex_buffer);
 
 	vkDestroySemaphore(m_device, m_image_available_semaphore, nullptr);
 	vkDestroySemaphore(m_device, m_render_finished_semaphore, nullptr);
 
 	vkDestroyCommandPool(m_device, m_graphics_command_pool, nullptr);
+	vkDestroyCommandPool(m_device, m_transfer_command_pool, nullptr);
+
+#ifdef VMA_USE_ALLOCATOR
+	vmaDestroyAllocator(m_vma_allocator);
+#endif
 
 	vkDestroyDevice(m_device, nullptr);
 
@@ -626,9 +642,18 @@ auto RenderManager::createLogicalDevice() -> void {
 	}
 
 	vkGetDeviceQueue(m_device, m_queue_family_indices.graphics_family, 0, &m_graphics_queue);
-
 	vkGetDeviceQueue(m_device, m_queue_family_indices.present_family, 0, &m_present_queue);
+	vkGetDeviceQueue(m_device, m_queue_family_indices.transfer_family, 0, &m_transfer_queue);
+}
 
+auto RenderManager::createAllocator() ->void {
+#ifdef VMA_USE_ALLOCATOR
+	auto create_info = VmaAllocatorCreateInfo{};
+	create_info.physicalDevice = m_physical_device;
+	create_info.device = m_device;
+
+	vmaCreateAllocator(&create_info, &m_vma_allocator);
+#endif
 }
 
 auto RenderManager::checkDeviceExtensionSupport(const VkPhysicalDevice& device) const -> bool {
@@ -1253,11 +1278,15 @@ auto RenderManager::createTransferCommandPool() ->  void {
 auto RenderManager::createBuffer(
 	VkDeviceSize size,
 	VkBufferUsageFlags usage,
+#ifdef VMA_USE_ALLOCATOR
+	VmaMemoryUsage allocation_usage,
+	VmaAllocationCreateFlags allocation_flags,
+#else
 	VkMemoryPropertyFlags properties,
+#endif
+	AllocatedBuffer& allocated_buffer,
 	VkSharingMode sharing_mode,
-	const std::vector<uint>* queue_family_indices,
-	VkBuffer& buffer,
-	VkDeviceMemory& buffer_memory) -> void {
+	const std::vector<uint>* queue_family_indices) -> void {
 
 	auto buffer_create_info = VkBufferCreateInfo{};
 
@@ -1278,12 +1307,26 @@ auto RenderManager::createBuffer(
 		buffer_create_info.pQueueFamilyIndices = nullptr;
 	}
 
-	if (vkCreateBuffer(m_device, &buffer_create_info, nullptr, &buffer) != VK_SUCCESS) {
+#ifdef VMA_USE_ALLOCATOR
+	auto allocation_info = VmaAllocationCreateInfo{};
+	allocation_info.usage = allocation_usage;
+	allocation_info.flags = allocation_flags;
+
+	vmaCreateBuffer(
+		m_vma_allocator,
+		&buffer_create_info,
+		&allocation_info,
+		&(allocated_buffer.buffer),
+		&(allocated_buffer.allocation),
+		&(allocated_buffer.allocation_info));
+#else
+
+	if (vkCreateBuffer(m_device, &buffer_create_info, nullptr, &(allocated_buffer.buffer)) != VK_SUCCESS) {
 		throw std::runtime_error("We couldn't create a buffer");
 	}
 
 	auto memory_requirements = VkMemoryRequirements{};
-	vkGetBufferMemoryRequirements(m_device, buffer, &memory_requirements);
+	vkGetBufferMemoryRequirements(m_device, allocated_buffer.buffer, &memory_requirements);
 
 	auto allocate_info = VkMemoryAllocateInfo{};
 	allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
@@ -1292,11 +1335,25 @@ auto RenderManager::createBuffer(
 		memory_requirements.memoryTypeBits,
 		properties);
 
-	if (vkAllocateMemory(m_device, &allocate_info, nullptr, &buffer_memory) != VK_SUCCESS) {
+	if (vkAllocateMemory(m_device, &allocate_info, nullptr, &(allocated_buffer.memory)) != VK_SUCCESS) {
 		throw std::runtime_error("We couldn't allocate the required memory for a buffer");
 	}
 
-	vkBindBufferMemory(m_device, m_vertex_buffer, buffer_memory, 0);
+	vkBindBufferMemory(m_device, (allocated_buffer.buffer), (allocated_buffer.memory), 0);
+#endif
+}
+
+auto RenderManager::destroyBuffer(
+	AllocatedBuffer& allocated_buffer
+) -> void {
+
+#ifdef VMA_USE_ALLOCATOR
+	vmaDestroyBuffer(m_vma_allocator, allocated_buffer.buffer, allocated_buffer.allocation);
+#else
+	vkDestroyBuffer(m_device, allocated_buffer.buffer, nullptr);
+	vkFreeMemory(m_device, allocated_buffer.memory, nullptr);
+#endif
+
 }
 
 auto RenderManager::createVertexBuffer() -> void {
@@ -1316,24 +1373,48 @@ auto RenderManager::createVertexBuffer() -> void {
 		std::unique(queue_family_indices.begin(), queue_family_indices.end()),
 		queue_family_indices.end());
 
-	auto buffer_size = VkDeviceSize{ sizeof(vertices)*vertices.size() };
+	auto buffer_size = VkDeviceSize{ sizeof(vertices[0])*vertices.size() };
+
+	auto staging_buffer = AllocatedBuffer{};
 	createBuffer(
 		buffer_size,
-		VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-		VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
-		queue_family_indices.size() > 1 ? VK_SHARING_MODE_CONCURRENT : VK_SHARING_MODE_EXCLUSIVE,
-		&queue_family_indices,
-		m_vertex_buffer,
-		m_vertex_buffer_memory);
+		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+#ifndef VMA_USE_ALLOCATOR
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+#else
+		VMA_MEMORY_USAGE_CPU_TO_GPU,
+		VMA_ALLOCATION_CREATE_MAPPED_BIT,
+#endif
+		staging_buffer,
+		VK_SHARING_MODE_EXCLUSIVE,
+		nullptr);
 
-
-	void* data;
-	vkMapMemory(m_device, m_vertex_buffer_memory, 0, buffer_size, 0, &data);
+#ifdef VMA_USE_ALLOCATOR
+	memcpy(staging_buffer.allocation_info.pMappedData, vertices.data(), gsl::narrow_cast<size_t>(buffer_size));
+#else
+	void *data;
+	vkMapMemory(m_device, staging_buffer.memory, 0, buffer_size, 0, &data);
 	memcpy(data, vertices.data(), gsl::narrow_cast<size_t>(buffer_size));
-	vkUnmapMemory(m_device, m_vertex_buffer_memory);
+	vkUnmapMemory(m_device, staging_buffer.memory);
+#endif
 
+	createBuffer(
+		buffer_size,
+		VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+#ifdef VMA_USE_ALLOCATOR
+		VMA_MEMORY_USAGE_GPU_ONLY,
+		0,
+#else
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+#endif
+		m_vertex_buffer,
+		queue_family_indices.size() > 1 ? VK_SHARING_MODE_CONCURRENT : VK_SHARING_MODE_EXCLUSIVE,
+		&queue_family_indices);
+
+	copyBuffer(staging_buffer.buffer, m_vertex_buffer.buffer, buffer_size);
+
+	destroyBuffer(staging_buffer);
 }
-
 
 auto RenderManager::findMemoryType(uint type_filter, VkMemoryPropertyFlags properties)->uint {
 
@@ -1348,6 +1429,41 @@ auto RenderManager::findMemoryType(uint type_filter, VkMemoryPropertyFlags prope
 	}
 
 	throw std::runtime_error("We couldn't find an appropriate memory type");
+}
+
+auto RenderManager::copyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size) -> void {
+	auto allocate_info = VkCommandBufferAllocateInfo{};
+	allocate_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	allocate_info.commandPool = m_transfer_command_pool;
+	allocate_info.commandBufferCount = 1;
+
+	auto command_buffer = VkCommandBuffer{};
+	vkAllocateCommandBuffers(m_device, &allocate_info, &command_buffer);
+
+	auto begin_info = VkCommandBufferBeginInfo{};
+	begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+	vkBeginCommandBuffer(command_buffer, &begin_info);
+
+	auto copy_region = VkBufferCopy{};
+	copy_region.srcOffset = 0;
+	copy_region.dstOffset = 0;
+	copy_region.size = size;
+	vkCmdCopyBuffer(command_buffer, src, dst, 1, &copy_region);
+
+	vkEndCommandBuffer(command_buffer);
+
+	auto submit_info = VkSubmitInfo{};
+	submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submit_info.commandBufferCount = 1;
+	submit_info.pCommandBuffers = &command_buffer;
+
+	vkQueueSubmit(m_transfer_queue, 1, &submit_info, VK_NULL_HANDLE);
+	vkQueueWaitIdle(m_transfer_queue);
+
+	vkFreeCommandBuffers(m_device, m_transfer_command_pool, 1, &command_buffer);
 }
 
 auto RenderManager::createCommandBuffers() ->  void {
@@ -1404,7 +1520,7 @@ auto RenderManager::recordCommandBuffers() -> void {
 		{
 			vkCmdBindPipeline(m_command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
 
-			VkBuffer vertex_buffers[] = { m_vertex_buffer };
+			VkBuffer vertex_buffers[] = { m_vertex_buffer.buffer };
 			VkDeviceSize offsets[] = { 0 };
 			vkCmdBindVertexBuffers(m_command_buffers[i], 0, 1, vertex_buffers, offsets);
 
@@ -1433,8 +1549,6 @@ auto RenderManager::createSemaphores() -> void {
 		throw std::runtime_error("We couldn't create the semaphores necessary for rendering");
 
 	}
-
-
 }
 
 auto RenderManager::drawFrame() -> void {

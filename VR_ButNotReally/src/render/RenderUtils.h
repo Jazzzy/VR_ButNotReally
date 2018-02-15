@@ -45,6 +45,7 @@ struct SwapChainSupportDetails {
 	std::vector<VkPresentModeKHR> present_modes{};
 };
 
+
 /**
 Defining the operator<< to print information about a physical device. 
 */
