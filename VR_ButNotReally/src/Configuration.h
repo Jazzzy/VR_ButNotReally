@@ -63,7 +63,6 @@ namespace config {
 		constexpr auto discrete_gpu_bonus = 1000;
 		constexpr auto integrated_gpu_bonus = 500;
 		constexpr auto same_queue_family = 500;
-		constexpr auto required_family_flags = VK_QUEUE_GRAPHICS_BIT;
 		constexpr auto queue_amount = 1;
 	}
 

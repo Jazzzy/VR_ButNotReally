@@ -350,12 +350,57 @@ private:
 	auto createFramebuffers() ->  void;
 
 	/**
-	Creates the command pool that contains the command buffers to 
+	Creates the command pool that contains the command buffers to
 	draw to during render time.
 
-	@see m_command_pool
+	@see m_graphics_command_pool
 	*/
-	auto createCommandPool() ->  void;
+	auto createGraphicsCommandPool() ->  void;
+
+	/**
+	Creates the command pool that contains the command buffers to
+	execute transfer memory commands.
+
+	@see m_transfer_command_pool
+	*/
+	auto createTransferCommandPool() ->  void;
+
+	/**
+	Helper function that creates a vulkan buffer in a general way.
+
+	@param The size of the memory to be allocated
+	@param The usage flags necessary for the memory we are allocating
+	@param The required properties for the memory we are allocating
+	@param The sharing mode of the buffer (VK_SHARING_MODE_(EXCLUSIVE/CONCURRENT))
+	@param The family indices of the queues this buffer will be shared between if CONCURRENT, nullptr otherwise
+	@param The buffer handle we will populate
+	@param The device memory handle we will populate 
+	*/
+	auto createBuffer(
+		VkDeviceSize size,
+		VkBufferUsageFlags usage,
+		VkMemoryPropertyFlags properties,
+		VkSharingMode sharing_mode,
+		const std::vector<uint>* queue_family_indices,
+		VkBuffer& buffer,
+		VkDeviceMemory& buffer_memory) -> void;
+
+	/**
+	Creates the vertex buffer that will hold the vertices to render.
+
+	@see m_vertex_buffer
+	@see m_vertex_buffer_memory
+	*/
+	auto createVertexBuffer() -> void;
+
+	/**
+	Calculates the required memory types given the input properties.
+
+	@param Flags that indicate the types of memories that we can consider.
+	@param Properties of the memory we need
+	@return Appropriate flags of the memory we can use.
+	*/
+	auto findMemoryType(uint type_filter, VkMemoryPropertyFlags properties)->uint;
 
 	/**
 	Creates the command buffers that contain the commands to
@@ -373,9 +418,9 @@ private:
 	auto recordCommandBuffers() -> void;
 
 	/**
-	Creates the semaphores necessary for synchronization of 
+	Creates the semaphores necessary for synchronization of
 	the rendering phase.
-	
+
 	@see m_image_available_semaphore
 	@see m_render_finished_semaphore
 	*/
@@ -443,7 +488,13 @@ private:
 
 	std::vector<VkFramebuffer> m_swap_chain_framebuffers{};
 
-	VkCommandPool m_command_pool{};
+	VkCommandPool m_graphics_command_pool{};
+
+	VkCommandPool m_transfer_command_pool{};
+
+	VkBuffer m_vertex_buffer{};
+
+	VkDeviceMemory m_vertex_buffer_memory{};
 
 	std::vector<VkCommandBuffer> m_command_buffers{};
 

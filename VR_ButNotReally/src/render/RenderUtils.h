@@ -20,6 +20,7 @@ queues in a vulkan physical device.
 struct QueueFamilyIndices {
 	int graphics_family = -1;
 	int present_family = -1;
+	int transfer_family = -1;
 
 	/**
 	Returns wether all the data members have been filled with 
@@ -29,7 +30,8 @@ struct QueueFamilyIndices {
 	*/
 	auto isComplete() noexcept {
 		return	graphics_family >= 0 &&
-			present_family >= 0;
+				present_family	>= 0 &&
+				transfer_family >= 0;
 	}
 };
 

@@ -5,6 +5,7 @@
 #include <set>
 #include <algorithm>
 #include <vulkan/vk_platform.h>
+#include "RenderData.h"
 #undef max
 #undef min
 
@@ -50,7 +51,8 @@ auto RenderManager::initVulkan() noexcept(false) -> void {
 	createRenderPass();
 	createGraphicsPipeline();
 	createFramebuffers();
-	createCommandPool();
+	createGraphicsCommandPool();
+	createVertexBuffer();
 	createCommandBuffers();
 	recordCommandBuffers();
 	createSemaphores();
@@ -72,7 +74,7 @@ auto RenderManager::recreateSwapChain() -> void {
 
 
 	/*
-	@Optimization: Create the new swapchain using the old one with the 
+	@Optimization: Create the new swapchain using the old one with the
 	field "oldSwapChain" so we don't have to stop rendering.
 	*/
 	cleanupSwapChain();
@@ -95,21 +97,28 @@ auto RenderManager::loopIteration() noexcept -> void {
 auto RenderManager::cleanup() noexcept -> void {
 	cleanupSwapChain();
 
+
+	/**
+	@TODO @DOING: Check here why the buffer is still in use
+	*/
+	vkDestroyBuffer(m_device, m_vertex_buffer, nullptr);
+	vkFreeMemory(m_device, m_vertex_buffer_memory, nullptr);
+
 	vkDestroySemaphore(m_device, m_image_available_semaphore, nullptr);
 	vkDestroySemaphore(m_device, m_render_finished_semaphore, nullptr);
 
-	vkDestroyCommandPool(m_device, m_command_pool, nullptr);
-	
+	vkDestroyCommandPool(m_device, m_graphics_command_pool, nullptr);
+
 	vkDestroyDevice(m_device, nullptr);
-	
+
 	destroyDebugReportCallbackEXT(m_instance, m_debug_callback, nullptr);
-	
+
 	vkDestroySurfaceKHR(m_instance, m_surface, nullptr);
-	
+
 	vkDestroyInstance(m_instance, nullptr);
-	
+
 	m_window.reset();
-	
+
 	glfwTerminate();
 }
 
@@ -121,7 +130,7 @@ auto RenderManager::cleanupSwapChain() noexcept -> void {
 
 	vkFreeCommandBuffers(
 		m_device,
-		m_command_pool,
+		m_graphics_command_pool,
 		gsl::narrow_cast<uint>(m_command_buffers.size()),
 		m_command_buffers.data());
 
@@ -545,8 +554,11 @@ auto RenderManager::findQueueFamilies(const VkPhysicalDevice& physical_device, P
 				std::cout << " - " << getVulkanQueueFlagNames(family.queueFlags) << std::endl;
 
 			if (family.queueCount > 0) {
-				if (family.queueFlags & config::gpu::required_family_flags) {
+				if (family.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
 					indices.graphics_family = i;
+				}
+				if (family.queueFlags & VK_QUEUE_TRANSFER_BIT) {
+					indices.transfer_family = i;
 				}
 				auto present_support = VkBool32{};
 				vkGetPhysicalDeviceSurfaceSupportKHR(physical_device, i, m_surface, &present_support);
@@ -572,7 +584,10 @@ auto RenderManager::createLogicalDevice() -> void {
 	m_queue_family_indices = findQueueFamilies(m_physical_device, PrintOptions::none);
 
 	auto queue_create_infos = std::vector<VkDeviceQueueCreateInfo>{};
-	auto unique_queue_families = std::set<int>{ m_queue_family_indices.graphics_family,m_queue_family_indices.present_family };
+	auto unique_queue_families = std::set<int>{
+		m_queue_family_indices.graphics_family,
+		m_queue_family_indices.present_family,
+		m_queue_family_indices.transfer_family };
 
 	const auto queue_priority = 1.0f;
 
@@ -788,19 +803,20 @@ auto RenderManager::createSwapChain() -> void {
 
 	auto queue_family_indices = std::vector<uint>{
 		gsl::narrow<uint>(m_queue_family_indices.graphics_family) ,
-		gsl::narrow<uint>(m_queue_family_indices.present_family)
+		gsl::narrow<uint>(m_queue_family_indices.present_family) ,
+		gsl::narrow<uint>(m_queue_family_indices.transfer_family)
 	};
 
-	if (m_queue_family_indices.graphics_family != m_queue_family_indices.present_family) {
-		create_info.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
-		create_info.queueFamilyIndexCount = 2;
-		create_info.pQueueFamilyIndices = queue_family_indices.data();
-	}
-	else {
-		create_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-		create_info.queueFamilyIndexCount = 0;
-		create_info.pQueueFamilyIndices = nullptr;
-	}
+	std::sort(queue_family_indices.begin(), queue_family_indices.end());
+	queue_family_indices.erase(
+		std::unique(queue_family_indices.begin(), queue_family_indices.end()),
+		queue_family_indices.end());
+
+	create_info.imageSharingMode = queue_family_indices.size() > 1 ? VK_SHARING_MODE_CONCURRENT : VK_SHARING_MODE_EXCLUSIVE;
+	create_info.queueFamilyIndexCount = gsl::narrow<uint>(queue_family_indices.size());
+	create_info.pQueueFamilyIndices = queue_family_indices.data();
+
+
 	/*
 	This is used to especify if we should use the alpha channel to blend with
 	other windows in the windowing system.
@@ -959,12 +975,16 @@ auto RenderManager::createGraphicsPipeline() -> void {
 	{ vert_shader_stage_info, frag_shader_stage_info };
 
 	/* We will modify this later when we deal with the vertex buffer */
+
+	auto binding_descriptions = Vertex::getBindingDescription();
+	auto attribute_descriptions = Vertex::getAttributeDescriptions();
+
 	auto vertex_input_create_info = VkPipelineVertexInputStateCreateInfo{};
 	vertex_input_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-	vertex_input_create_info.vertexBindingDescriptionCount = 0;
-	vertex_input_create_info.pVertexBindingDescriptions = nullptr;
-	vertex_input_create_info.vertexAttributeDescriptionCount = 0;
-	vertex_input_create_info.pVertexAttributeDescriptions = nullptr;
+	vertex_input_create_info.vertexBindingDescriptionCount = 1;
+	vertex_input_create_info.pVertexBindingDescriptions = &binding_descriptions;
+	vertex_input_create_info.vertexAttributeDescriptionCount = gsl::narrow_cast<uint>(attribute_descriptions.size());
+	vertex_input_create_info.pVertexAttributeDescriptions = attribute_descriptions.data();
 
 	auto input_assembly_create_info = VkPipelineInputAssemblyStateCreateInfo{};
 	input_assembly_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -1180,8 +1200,8 @@ auto RenderManager::createFramebuffers() ->  void {
 
 }
 
-auto RenderManager::createCommandPool() ->  void {
-	std::cout << "Creating Command Pool " << std::endl;
+auto RenderManager::createGraphicsCommandPool() ->  void {
+	std::cout << "Creating Graphics Command Pool " << std::endl;
 
 	auto command_pool_create_info = VkCommandPoolCreateInfo{};
 	command_pool_create_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
@@ -1198,11 +1218,136 @@ auto RenderManager::createCommandPool() ->  void {
 	*/
 	command_pool_create_info.flags = 0;
 
-	if (vkCreateCommandPool(m_device, &command_pool_create_info, nullptr, &m_command_pool) != VK_SUCCESS) {
-		throw std::runtime_error("We couldn't create a command pool");
+	if (vkCreateCommandPool(m_device, &command_pool_create_info, nullptr, &m_graphics_command_pool) != VK_SUCCESS) {
+		throw std::runtime_error("We couldn't create a graphics command pool");
 	}
 
-	std::cout << "\tCommand Pool Created" << std::endl << std::endl;
+	std::cout << "\tGraphics Command Pool Created" << std::endl << std::endl;
+}
+
+auto RenderManager::createTransferCommandPool() ->  void {
+	std::cout << "Creating Transfer Command Pool " << std::endl;
+
+	auto command_pool_create_info = VkCommandPoolCreateInfo{};
+	command_pool_create_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	command_pool_create_info.queueFamilyIndex = m_queue_family_indices.transfer_family;
+	/*
+	For the flags we could use:
+
+	VK_COMMAND_POOL_CREATE_TRANSIENT_BIT: If we are going to rerecord the command
+	buffer with new commands frequently
+
+	VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT: If we want to rerecord command
+	buffers individually (without resetting all together).
+
+	*/
+	command_pool_create_info.flags = 0;
+
+	if (vkCreateCommandPool(m_device, &command_pool_create_info, nullptr, &m_transfer_command_pool) != VK_SUCCESS) {
+		throw std::runtime_error("We couldn't create a transfer command pool");
+	}
+
+	std::cout << "\tTransfer Command Pool Created" << std::endl << std::endl;
+}
+
+auto RenderManager::createBuffer(
+	VkDeviceSize size,
+	VkBufferUsageFlags usage,
+	VkMemoryPropertyFlags properties,
+	VkSharingMode sharing_mode,
+	const std::vector<uint>* queue_family_indices,
+	VkBuffer& buffer,
+	VkDeviceMemory& buffer_memory) -> void {
+
+	auto buffer_create_info = VkBufferCreateInfo{};
+
+	buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	buffer_create_info.size = size;
+	buffer_create_info.usage = usage;
+
+	buffer_create_info.sharingMode = sharing_mode;
+	if (sharing_mode == VK_SHARING_MODE_CONCURRENT) {
+		if (queue_family_indices == nullptr || queue_family_indices->size() <= 1) {
+			throw std::runtime_error("We can't create a shared buffer without more than one families to share between");
+		}
+		buffer_create_info.queueFamilyIndexCount = gsl::narrow<uint>(queue_family_indices->size());
+		buffer_create_info.pQueueFamilyIndices = queue_family_indices->data();
+	}
+	else {
+		buffer_create_info.queueFamilyIndexCount = 0;
+		buffer_create_info.pQueueFamilyIndices = nullptr;
+	}
+
+	if (vkCreateBuffer(m_device, &buffer_create_info, nullptr, &buffer) != VK_SUCCESS) {
+		throw std::runtime_error("We couldn't create a buffer");
+	}
+
+	auto memory_requirements = VkMemoryRequirements{};
+	vkGetBufferMemoryRequirements(m_device, buffer, &memory_requirements);
+
+	auto allocate_info = VkMemoryAllocateInfo{};
+	allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	allocate_info.allocationSize = memory_requirements.size;
+	allocate_info.memoryTypeIndex = findMemoryType(
+		memory_requirements.memoryTypeBits,
+		properties);
+
+	if (vkAllocateMemory(m_device, &allocate_info, nullptr, &buffer_memory) != VK_SUCCESS) {
+		throw std::runtime_error("We couldn't allocate the required memory for a buffer");
+	}
+
+	vkBindBufferMemory(m_device, m_vertex_buffer, buffer_memory, 0);
+}
+
+auto RenderManager::createVertexBuffer() -> void {
+
+	/*
+	Access to this buffer will be granted to both the graphics family to allow the
+	GPU to render from it and the transfer family so we can write to the buffer
+	from another one mapped to CPU memory.
+	*/
+	auto queue_family_indices = std::vector<uint>{
+		gsl::narrow<uint>(m_queue_family_indices.graphics_family) ,
+		gsl::narrow<uint>(m_queue_family_indices.transfer_family)
+	};
+
+	std::sort(queue_family_indices.begin(), queue_family_indices.end());
+	queue_family_indices.erase(
+		std::unique(queue_family_indices.begin(), queue_family_indices.end()),
+		queue_family_indices.end());
+
+	auto buffer_size = VkDeviceSize{ sizeof(vertices)*vertices.size() };
+	createBuffer(
+		buffer_size,
+		VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+		VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+		queue_family_indices.size() > 1 ? VK_SHARING_MODE_CONCURRENT : VK_SHARING_MODE_EXCLUSIVE,
+		&queue_family_indices,
+		m_vertex_buffer,
+		m_vertex_buffer_memory);
+
+
+	void* data;
+	vkMapMemory(m_device, m_vertex_buffer_memory, 0, buffer_size, 0, &data);
+	memcpy(data, vertices.data(), gsl::narrow_cast<size_t>(buffer_size));
+	vkUnmapMemory(m_device, m_vertex_buffer_memory);
+
+}
+
+
+auto RenderManager::findMemoryType(uint type_filter, VkMemoryPropertyFlags properties)->uint {
+
+	auto memory_properties = VkPhysicalDeviceMemoryProperties{};
+	vkGetPhysicalDeviceMemoryProperties(m_physical_device, &memory_properties);
+
+	for (uint i = 0; memory_properties.memoryTypeCount; ++i) {
+		if ((type_filter & (1 << i)) &&
+			(memory_properties.memoryTypes[i].propertyFlags & properties) == properties) {
+			return i;
+		}
+	}
+
+	throw std::runtime_error("We couldn't find an appropriate memory type");
 }
 
 auto RenderManager::createCommandBuffers() ->  void {
@@ -1212,7 +1357,7 @@ auto RenderManager::createCommandBuffers() ->  void {
 
 	auto alloc_info = VkCommandBufferAllocateInfo{};
 	alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-	alloc_info.commandPool = m_command_pool;
+	alloc_info.commandPool = m_graphics_command_pool;
 	/*
 	Level can have this values with this meaning:
 
@@ -1259,7 +1404,11 @@ auto RenderManager::recordCommandBuffers() -> void {
 		{
 			vkCmdBindPipeline(m_command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
 
-			vkCmdDraw(m_command_buffers[i], 3, 1, 0, 0);
+			VkBuffer vertex_buffers[] = { m_vertex_buffer };
+			VkDeviceSize offsets[] = { 0 };
+			vkCmdBindVertexBuffers(m_command_buffers[i], 0, 1, vertex_buffers, offsets);
+
+			vkCmdDraw(m_command_buffers[i], gsl::narrow<uint>(vertices.size()), 1, 0, 0);
 		}
 
 		vkCmdEndRenderPass(m_command_buffers[i]);
@@ -1280,7 +1429,7 @@ auto RenderManager::createSemaphores() -> void {
 
 	if ((vkCreateSemaphore(m_device, &create_info, nullptr, &m_image_available_semaphore) != VK_SUCCESS) ||
 		(vkCreateSemaphore(m_device, &create_info, nullptr, &m_render_finished_semaphore) != VK_SUCCESS)) {
-	
+
 		throw std::runtime_error("We couldn't create the semaphores necessary for rendering");
 
 	}
@@ -1316,7 +1465,7 @@ auto RenderManager::drawFrame() -> void {
 	submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
 	const VkSemaphore wait_semaphores[] = { m_image_available_semaphore };
-	const VkPipelineStageFlags wait_stages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+	const VkPipelineStageFlags wait_stages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
 	submit_info.waitSemaphoreCount = 1;
 	submit_info.pWaitSemaphores = wait_semaphores;
 	submit_info.pWaitDstStageMask = wait_stages;
@@ -1335,7 +1484,7 @@ auto RenderManager::drawFrame() -> void {
 	present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 	present_info.waitSemaphoreCount = 1;
 	present_info.pWaitSemaphores = signal_semaphores;
-	VkSwapchainKHR swap_chains[] = {m_swap_chain};
+	VkSwapchainKHR swap_chains[] = { m_swap_chain };
 	present_info.swapchainCount = 1;
 	present_info.pSwapchains = swap_chains;
 	present_info.pImageIndices = &image_index;
@@ -1347,7 +1496,7 @@ auto RenderManager::drawFrame() -> void {
 	if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
 		recreateSwapChain();
 	}
-	else if (result != VK_SUCCESS ) {
+	else if (result != VK_SUCCESS) {
 		throw std::runtime_error("We couldn't submit the presentation info to the queue");
 	}
 

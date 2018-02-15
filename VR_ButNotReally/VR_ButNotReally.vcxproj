@@ -19,12 +19,14 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="src\render\RenderData.cpp" />
     <ClCompile Include="src\render\RenderUtils.cpp" />
     <ClCompile Include="src\render\RenderManager.cpp" />
     <ClCompile Include="src\Main.cpp" />
     <ClCompile Include="src\utils\Utils.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\render\RenderData.h" />
     <ClInclude Include="src\render\RenderUtils.h" />
     <ClInclude Include="src\Configuration.h" />
     <ClInclude Include="src\render\RenderManager.h" />
@@ -34,8 +36,12 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="src\render\shaders\compile_shaders.bat" />
-    <None Include="src\render\shaders\triangle.frag" />
-    <None Include="src\render\shaders\triangle.vert" />
+    <None Include="src\render\shaders\triangle.frag">
+      <DeploymentContent>true</DeploymentContent>
+    </None>
+    <None Include="src\render\shaders\triangle.vert">
+      <DeploymentContent>true</DeploymentContent>
+    </None>
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>15.0</VCProjectVersion>
