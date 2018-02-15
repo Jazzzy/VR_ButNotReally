@@ -438,9 +438,15 @@ private:
 	Creates the vertex buffer that will hold the vertices to render.
 
 	@see m_vertex_buffer
-	@see m_vertex_buffer_memory
 	*/
 	auto createVertexBuffer() -> void;
+
+	/**
+	Creates the index buffer that will hold the indexes in order to render.
+
+	@see m_index_buffer
+	*/
+	auto createIndexBuffer() -> void;
 
 	/**
 	Calculates the required memory types given the input properties.
@@ -557,6 +563,8 @@ private:
 	VkCommandPool m_transfer_command_pool{};
 
 	AllocatedBuffer m_vertex_buffer{};
+
+	AllocatedBuffer m_index_buffer{};
 
 	std::vector<VkCommandBuffer> m_command_buffers{};
 

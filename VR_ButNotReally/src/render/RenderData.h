@@ -11,7 +11,7 @@ struct Vertex {
 	glm::vec3 color;
 
 	auto static getBindingDescription() ->VkVertexInputBindingDescription {
-	
+
 		auto binding_description = VkVertexInputBindingDescription{};
 
 		binding_description.binding = 0;
@@ -21,8 +21,8 @@ struct Vertex {
 		return binding_description;
 	}
 
-	auto static getAttributeDescriptions() -> std::array<VkVertexInputAttributeDescription,2> {
-	
+	auto static getAttributeDescriptions()->std::array<VkVertexInputAttributeDescription, 2> {
+
 		auto attribute_descriptions = std::array<VkVertexInputAttributeDescription, 2>{};
 
 		attribute_descriptions[0].binding = 0;
@@ -40,8 +40,13 @@ struct Vertex {
 };
 
 const auto vertices = std::vector<Vertex>{
-	{ {  0.0f,-0.5f },{ 1.0f, 0.8f, 0.0f } },
-	{ {  0.5f, 0.5f },{ 0.0f, 1.0f, 0.0f } },
-	{ { -0.5f, 0.5f },{ 0.3f, 0.0f, 1.0f } },
+	{ { -0.5f, -0.5f },{ 1.0f, 0.0f, 0.0f } },
+	{ {  0.5f, -0.5f },{ 0.0f, 1.0f, 0.0f } },
+	{ {  0.5f,  0.5f },{ 0.0f, 0.0f, 1.0f } },
+	{ { -0.5f,  0.5f },{ 1.0f, 1.0f, 1.0f } },
+};
+
+const auto indices = std::vector<uint16_t>{
+	0, 1, 2, 2, 3, 0
 };
 

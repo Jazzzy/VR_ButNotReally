@@ -65,6 +65,7 @@ auto RenderManager::initVulkan() noexcept(false) -> void {
 	createGraphicsCommandPool();
 	createTransferCommandPool();
 	createVertexBuffer();
+	createIndexBuffer();
 	createCommandBuffers();
 	recordCommandBuffers();
 	createSemaphores();
@@ -107,12 +108,10 @@ auto RenderManager::loopIteration() noexcept -> void {
 
 auto RenderManager::cleanup() noexcept -> void {
 	vkDeviceWaitIdle(m_device);
-
+	
 	cleanupSwapChain();
 
-	/**
-	@TODO @DOING: Check here why the buffer is still in use
-	*/
+	destroyBuffer(m_index_buffer);
 	destroyBuffer(m_vertex_buffer);
 
 	vkDestroySemaphore(m_device, m_image_available_semaphore, nullptr);
@@ -1416,6 +1415,67 @@ auto RenderManager::createVertexBuffer() -> void {
 	destroyBuffer(staging_buffer);
 }
 
+auto RenderManager::createIndexBuffer() -> void {
+
+
+	/*
+	Access to this buffer will be granted to both the graphics family to allow the
+	GPU to render from it and the transfer family so we can write to the buffer
+	from another one mapped to CPU memory.
+	*/
+	auto queue_family_indices = std::vector<uint>{
+		gsl::narrow<uint>(m_queue_family_indices.graphics_family) ,
+		gsl::narrow<uint>(m_queue_family_indices.transfer_family)
+	};
+
+	std::sort(queue_family_indices.begin(), queue_family_indices.end());
+	queue_family_indices.erase(
+		std::unique(queue_family_indices.begin(), queue_family_indices.end()),
+		queue_family_indices.end());
+
+	auto buffer_size = VkDeviceSize{ sizeof(indices[0])*indices.size() };
+
+	auto staging_buffer = AllocatedBuffer{};
+	createBuffer(
+		buffer_size,
+		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+#ifndef VMA_USE_ALLOCATOR
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+#else
+		VMA_MEMORY_USAGE_CPU_TO_GPU,
+		VMA_ALLOCATION_CREATE_MAPPED_BIT,
+#endif
+		staging_buffer,
+		VK_SHARING_MODE_EXCLUSIVE,
+		nullptr);
+
+#ifdef VMA_USE_ALLOCATOR
+	memcpy(staging_buffer.allocation_info.pMappedData, indices.data(), gsl::narrow_cast<size_t>(buffer_size));
+#else
+	void *data;
+	vkMapMemory(m_device, staging_buffer.memory, 0, buffer_size, 0, &data);
+	memcpy(data, indices.data(), gsl::narrow_cast<size_t>(buffer_size));
+	vkUnmapMemory(m_device, staging_buffer.memory);
+#endif
+
+	createBuffer(
+		buffer_size,
+		VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+#ifdef VMA_USE_ALLOCATOR
+		VMA_MEMORY_USAGE_GPU_ONLY,
+		0,
+#else
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+#endif
+		m_index_buffer,
+		queue_family_indices.size() > 1 ? VK_SHARING_MODE_CONCURRENT : VK_SHARING_MODE_EXCLUSIVE,
+		&queue_family_indices);
+
+	copyBuffer(staging_buffer.buffer, m_index_buffer.buffer, buffer_size);
+
+	destroyBuffer(staging_buffer);
+}
+
 auto RenderManager::findMemoryType(uint type_filter, VkMemoryPropertyFlags properties)->uint {
 
 	auto memory_properties = VkPhysicalDeviceMemoryProperties{};
@@ -1524,7 +1584,9 @@ auto RenderManager::recordCommandBuffers() -> void {
 			VkDeviceSize offsets[] = { 0 };
 			vkCmdBindVertexBuffers(m_command_buffers[i], 0, 1, vertex_buffers, offsets);
 
-			vkCmdDraw(m_command_buffers[i], gsl::narrow<uint>(vertices.size()), 1, 0, 0);
+			vkCmdBindIndexBuffer(m_command_buffers[i], m_index_buffer.buffer, 0, VK_INDEX_TYPE_UINT16);
+
+			vkCmdDrawIndexed(m_command_buffers[i], gsl::narrow<uint>(indices.size()), 1, 0, 0, 0);
 		}
 
 		vkCmdEndRenderPass(m_command_buffers[i]);
