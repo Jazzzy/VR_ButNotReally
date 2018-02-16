@@ -73,6 +73,7 @@ auto RenderManager::initVulkan() noexcept(false) -> void {
 	createCommandBuffers();
 	recordCommandBuffers();
 	createSemaphores();
+	createFences();
 }
 
 auto RenderManager::recreateSwapChain() -> void {
@@ -118,8 +119,18 @@ auto RenderManager::cleanup() noexcept -> void {
 	destroyBuffer(m_index_buffer);
 	destroyBuffer(m_vertex_buffer);
 
-	vkDestroySemaphore(m_device, m_image_available_semaphore, nullptr);
-	vkDestroySemaphore(m_device, m_render_finished_semaphore, nullptr);
+
+	for (auto i = 0; i < m_command_buffers.size(); ++i) {
+		vkDestroyFence(m_device, m_command_buffer_fences[i], nullptr);
+	}
+
+	for (auto i = 0; i < m_swap_chain_images.size(); ++i) {
+		vkDestroySemaphore(m_device, m_image_available_semaphores[i], nullptr);
+	}
+
+	for (auto i = 0; i < m_command_buffers.size(); ++i) {
+		vkDestroySemaphore(m_device, m_render_finished_semaphores[i], nullptr);
+	}
 
 	vkDestroyCommandPool(m_device, m_graphics_command_pool, nullptr);
 	vkDestroyCommandPool(m_device, m_transfer_command_pool, nullptr);
@@ -1560,6 +1571,9 @@ auto RenderManager::createCommandBuffers() ->  void {
 		throw std::runtime_error("We couldn't allocate the necessary command buffers");
 	}
 
+	m_command_buffer_submitted.resize(m_command_buffers.size());
+	std::fill(m_command_buffer_submitted.begin(), m_command_buffer_submitted.end(), false);
+
 	std::cout << "\tCommand Buffers Created" << std::endl << std::endl;
 
 }
@@ -1579,6 +1593,12 @@ auto RenderManager::recordCommandBuffers() -> void {
 		auto render_info = VkRenderPassBeginInfo{};
 		render_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
 		render_info.renderPass = m_render_pass;
+		/*
+		@NOTE: This should be using m_current_swapchain_buffer if we are recording
+		before each frame.
+
+		@see m_current_swapchain_buffer
+		*/
 		render_info.framebuffer = m_swap_chain_framebuffers[i];
 		render_info.renderArea.offset = { 0, 0 };
 		render_info.renderArea.extent = m_swap_chain_extent;
@@ -1615,21 +1635,73 @@ auto RenderManager::recordCommandBuffers() -> void {
 
 auto RenderManager::createSemaphores() -> void {
 
+	std::cout << "Creating Semaphores" << std::endl;
+
 	auto create_info = VkSemaphoreCreateInfo{};
 	create_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 
-	if ((vkCreateSemaphore(m_device, &create_info, nullptr, &m_image_available_semaphore) != VK_SUCCESS) ||
-		(vkCreateSemaphore(m_device, &create_info, nullptr, &m_render_finished_semaphore) != VK_SUCCESS)) {
+	m_image_available_semaphores.resize(m_swap_chain_images.size());
 
-		throw std::runtime_error("We couldn't create the semaphores necessary for rendering");
+	for (auto i = 0; i < m_swap_chain_images.size(); ++i) {
+
+		if (vkCreateSemaphore(m_device, &create_info, nullptr, &m_image_available_semaphores[i]) != VK_SUCCESS) {
+			throw std::runtime_error("We couldn't create a semaphore to check when the image is available");
+		}
 
 	}
+
+	m_render_finished_semaphores.resize(m_command_buffers.size());
+	for (auto i = 0; i < m_command_buffers.size(); ++i) {
+
+		if (vkCreateSemaphore(m_device, &create_info, nullptr, &m_render_finished_semaphores[i]) != VK_SUCCESS) {
+			throw std::runtime_error("We couldn't create semaphore to check when rendering has been finished");
+		}
+
+	}
+
+	std::cout << "\tSemaphores Created" << std::endl << std::endl;
+
+
+}
+
+auto RenderManager::createFences() -> void {
+
+	std::cout << "Creating Fences" << std::endl;
+
+	auto create_info = VkFenceCreateInfo{};
+	create_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+
+	m_command_buffer_fences.resize(m_command_buffers.size());
+	for (auto i = 0; i < m_command_buffers.size(); ++i) {
+
+		if (vkCreateFence(m_device, &create_info, nullptr, &m_command_buffer_fences[i]) != VK_SUCCESS) {
+			throw std::runtime_error("We couldn't create a fence to sinchronize the command buffers");
+		}
+
+	}
+
+	std::cout << "\tFences Created" << std::endl << std::endl;
+
 }
 
 auto RenderManager::drawFrame() -> void {
-	uint image_index;
+	//vkQueueWaitIdle(m_present_queue);
 
-	vkQueueWaitIdle(m_present_queue);
+	if (m_command_buffer_submitted[m_current_command_buffer]) {
+		if (vkWaitForFences(
+			m_device,
+			1,
+			&m_command_buffer_fences[m_current_command_buffer],
+			VK_TRUE,
+			std::numeric_limits<uint64_t>::max())
+			!= VK_SUCCESS) {
+			std::runtime_error("We couldn't wait for the fence involving the current command buffer");
+		}
+	}
+
+	if (vkResetFences(m_device, 1, &m_command_buffer_fences[m_current_command_buffer])) {
+		std::runtime_error("We couldn't reset the fence involving the current command buffer");
+	}
 
 	auto result = vkAcquireNextImageKHR(
 		m_device,
@@ -1638,9 +1710,9 @@ auto RenderManager::drawFrame() -> void {
 		This is the timeout in ns for an image to become available
 		*/
 		std::numeric_limits<uint64_t>::max(),
-		m_image_available_semaphore,
+		m_image_available_semaphores[m_current_command_buffer],
 		VK_NULL_HANDLE,
-		&image_index);
+		&m_current_swapchain_buffer);
 
 	if (result == VK_ERROR_OUT_OF_DATE_KHR) {
 		recreateSwapChain();
@@ -1653,19 +1725,19 @@ auto RenderManager::drawFrame() -> void {
 	auto submit_info = VkSubmitInfo{};
 	submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
-	const VkSemaphore wait_semaphores[] = { m_image_available_semaphore };
+	const VkSemaphore wait_semaphores[] = { m_image_available_semaphores[m_current_command_buffer] };
 	const VkPipelineStageFlags wait_stages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
 	submit_info.waitSemaphoreCount = 1;
 	submit_info.pWaitSemaphores = wait_semaphores;
 	submit_info.pWaitDstStageMask = wait_stages;
 	submit_info.commandBufferCount = 1;
-	submit_info.pCommandBuffers = &m_command_buffers[image_index];
-	VkSemaphore signal_semaphores[] = { m_render_finished_semaphore };
+	submit_info.pCommandBuffers = &m_command_buffers[m_current_command_buffer];
+	VkSemaphore signal_semaphores[] = { m_render_finished_semaphores[m_current_command_buffer] };
 	submit_info.signalSemaphoreCount = 1;
 	submit_info.pSignalSemaphores = signal_semaphores;
 
 
-	if (vkQueueSubmit(m_graphics_queue, 1, &submit_info, VK_NULL_HANDLE) != VK_SUCCESS) {
+	if (vkQueueSubmit(m_graphics_queue, 1, &submit_info, m_command_buffer_fences[m_current_command_buffer]) != VK_SUCCESS) {
 		throw std::runtime_error("We couldn't submit our command buffer");
 	}
 
@@ -1676,7 +1748,7 @@ auto RenderManager::drawFrame() -> void {
 	VkSwapchainKHR swap_chains[] = { m_swap_chain };
 	present_info.swapchainCount = 1;
 	present_info.pSwapchains = swap_chains;
-	present_info.pImageIndices = &image_index;
+	present_info.pImageIndices = &m_current_swapchain_buffer;
 	present_info.pResults = nullptr;
 
 
@@ -1689,6 +1761,8 @@ auto RenderManager::drawFrame() -> void {
 		throw std::runtime_error("We couldn't submit the presentation info to the queue");
 	}
 
+	m_command_buffer_submitted[m_current_command_buffer] = true;
+	m_current_command_buffer = (m_current_command_buffer + 1) % m_command_buffers.size();
 }
 
 auto RenderManager::onWindowsResized(GLFWwindow * window, int width, int height) -> void {

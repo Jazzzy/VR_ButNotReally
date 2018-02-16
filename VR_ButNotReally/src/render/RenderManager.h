@@ -295,11 +295,11 @@ private:
 
 	/**
 	Creates the allocator used to reserve memory in vulkan
-	
+
 	@see m_vma_allocator
 	*/
 	auto createAllocator() noexcept ->void;
-	
+
 	/**
 	Checks if the physical device provided supports all the extensions required by our configuration
 
@@ -490,10 +490,18 @@ private:
 	Creates the semaphores necessary for synchronization of
 	the rendering phase.
 
-	@see m_image_available_semaphore
-	@see m_render_finished_semaphore
+	@see m_image_available_semaphores
+	@see m_render_finished_semaphores
 	*/
 	auto createSemaphores() -> void;
+
+	/**
+	Creates the fences necessary for synchronization of
+	the rendering phase.
+
+	@see m_command_buffer_fences
+	*/
+	auto createFences() -> void;
 
 
 	/**
@@ -547,6 +555,8 @@ private:
 
 	VkSwapchainKHR m_swap_chain{};
 
+	uint m_current_swapchain_buffer{};
+
 	std::vector<VkImage> m_swap_chain_images{};
 
 	VkFormat m_swap_chain_image_format{};
@@ -573,10 +583,15 @@ private:
 
 	std::vector<VkCommandBuffer> m_command_buffers{};
 
-	VkSemaphore m_image_available_semaphore{};
+	uint m_current_command_buffer{};
 
-	VkSemaphore m_render_finished_semaphore{};
+	std::vector<bool> m_command_buffer_submitted{};
 
+	std::vector<VkSemaphore> m_image_available_semaphores{};
+
+	std::vector<VkSemaphore> m_render_finished_semaphores{};
+
+	std::vector<VkFence> m_command_buffer_fences{};
 
 };
 
