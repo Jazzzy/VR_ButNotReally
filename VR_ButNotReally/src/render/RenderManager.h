@@ -33,7 +33,12 @@ buffers and images without VMA_USE_ALLOCATOR could not be fully supported.
 #define VMA_USE_ALLOCATOR
 
 #ifdef VMA_USE_ALLOCATOR
+#pragma warning(push)
+#include <CppCoreCheck/Warnings.h>
+#pragma warning(disable: ALL_CPPCORECHECK_WARNINGS)
 #include "vk_mem_alloc.h"
+#pragma warning(pop)
+
 
 struct AllocatedBuffer {
 	VkBuffer buffer{};
@@ -293,7 +298,7 @@ private:
 	
 	@see m_vma_allocator
 	*/
-	auto createAllocator() ->void;
+	auto createAllocator() noexcept ->void;
 	
 	/**
 	Checks if the physical device provided supports all the extensions required by our configuration
@@ -432,7 +437,7 @@ private:
 
 	auto destroyBuffer(
 		AllocatedBuffer& allocated_buffer
-	) -> void;
+	) noexcept -> void;
 
 	/**
 	Creates the vertex buffer that will hold the vertices to render.
@@ -464,7 +469,7 @@ private:
 	@param The destination buffer
 	@param The size of the memory to be copied
 	*/
-	auto copyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size) -> void;
+	auto copyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size) noexcept -> void;
 
 	/**
 	Creates the command buffers that contain the commands to

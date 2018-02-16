@@ -16,7 +16,11 @@
 
 #ifdef VMA_USE_ALLOCATOR
 #define VMA_IMPLEMENTATION
+#pragma warning(push)
+#include <CppCoreCheck/Warnings.h>
+#pragma warning(disable: ALL_CPPCORECHECK_WARNINGS)
 #include "vk_mem_alloc.h"
+#pragma warning(pop)
 #endif
 
 RenderManager::RenderManager() : m_instance() {
@@ -108,7 +112,7 @@ auto RenderManager::loopIteration() noexcept -> void {
 
 auto RenderManager::cleanup() noexcept -> void {
 	vkDeviceWaitIdle(m_device);
-	
+
 	cleanupSwapChain();
 
 	destroyBuffer(m_index_buffer);
@@ -645,7 +649,7 @@ auto RenderManager::createLogicalDevice() -> void {
 	vkGetDeviceQueue(m_device, m_queue_family_indices.transfer_family, 0, &m_transfer_queue);
 }
 
-auto RenderManager::createAllocator() ->void {
+auto RenderManager::createAllocator() noexcept ->void {
 #ifdef VMA_USE_ALLOCATOR
 	auto create_info = VmaAllocatorCreateInfo{};
 	create_info.physicalDevice = m_physical_device;
@@ -1000,8 +1004,8 @@ auto RenderManager::createGraphicsPipeline() -> void {
 
 	/* We will modify this later when we deal with the vertex buffer */
 
-	auto binding_descriptions = Vertex::getBindingDescription();
-	auto attribute_descriptions = Vertex::getAttributeDescriptions();
+	const auto binding_descriptions = Vertex::getBindingDescription();
+	const auto attribute_descriptions = Vertex::getAttributeDescriptions();
 
 	auto vertex_input_create_info = VkPipelineVertexInputStateCreateInfo{};
 	vertex_input_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -1344,7 +1348,7 @@ auto RenderManager::createBuffer(
 
 auto RenderManager::destroyBuffer(
 	AllocatedBuffer& allocated_buffer
-) -> void {
+) noexcept -> void {
 
 #ifdef VMA_USE_ALLOCATOR
 	vmaDestroyBuffer(m_vma_allocator, allocated_buffer.buffer, allocated_buffer.allocation);
@@ -1357,123 +1361,127 @@ auto RenderManager::destroyBuffer(
 
 auto RenderManager::createVertexBuffer() -> void {
 
-	/*
-	Access to this buffer will be granted to both the graphics family to allow the
-	GPU to render from it and the transfer family so we can write to the buffer
-	from another one mapped to CPU memory.
-	*/
-	auto queue_family_indices = std::vector<uint>{
-		gsl::narrow<uint>(m_queue_family_indices.graphics_family) ,
-		gsl::narrow<uint>(m_queue_family_indices.transfer_family)
-	};
+	[[gsl::suppress(type.4)]]{
 
-	std::sort(queue_family_indices.begin(), queue_family_indices.end());
-	queue_family_indices.erase(
-		std::unique(queue_family_indices.begin(), queue_family_indices.end()),
-		queue_family_indices.end());
+		/*
+		Access to this buffer will be granted to both the graphics family to allow the
+		GPU to render from it and the transfer family so we can write to the buffer
+		from another one mapped to CPU memory.
+		*/
+		auto queue_family_indices = std::vector<uint>{
+			gsl::narrow<uint>(m_queue_family_indices.graphics_family) ,
+			gsl::narrow<uint>(m_queue_family_indices.transfer_family)
+		};
 
-	auto buffer_size = VkDeviceSize{ sizeof(vertices[0])*vertices.size() };
+		std::sort(queue_family_indices.begin(), queue_family_indices.end());
+		queue_family_indices.erase(
+			std::unique(queue_family_indices.begin(), queue_family_indices.end()),
+			queue_family_indices.end());
 
-	auto staging_buffer = AllocatedBuffer{};
-	createBuffer(
-		buffer_size,
-		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-#ifndef VMA_USE_ALLOCATOR
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-#else
-		VMA_MEMORY_USAGE_CPU_TO_GPU,
-		VMA_ALLOCATION_CREATE_MAPPED_BIT,
-#endif
-		staging_buffer,
-		VK_SHARING_MODE_EXCLUSIVE,
-		nullptr);
+		auto buffer_size = VkDeviceSize{ gsl::narrow_cast<size_t>(sizeof(vertices[0]))*vertices.size() };
 
-#ifdef VMA_USE_ALLOCATOR
-	memcpy(staging_buffer.allocation_info.pMappedData, vertices.data(), gsl::narrow_cast<size_t>(buffer_size));
-#else
-	void *data;
-	vkMapMemory(m_device, staging_buffer.memory, 0, buffer_size, 0, &data);
-	memcpy(data, vertices.data(), gsl::narrow_cast<size_t>(buffer_size));
-	vkUnmapMemory(m_device, staging_buffer.memory);
-#endif
+		auto staging_buffer = AllocatedBuffer{};
+		createBuffer(
+			buffer_size,
+			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+	#ifndef VMA_USE_ALLOCATOR
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+	#else
+			VMA_MEMORY_USAGE_CPU_TO_GPU,
+			VMA_ALLOCATION_CREATE_MAPPED_BIT,
+	#endif
+			staging_buffer,
+			VK_SHARING_MODE_EXCLUSIVE,
+			nullptr);
 
-	createBuffer(
-		buffer_size,
-		VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-#ifdef VMA_USE_ALLOCATOR
-		VMA_MEMORY_USAGE_GPU_ONLY,
-		0,
-#else
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-#endif
-		m_vertex_buffer,
-		queue_family_indices.size() > 1 ? VK_SHARING_MODE_CONCURRENT : VK_SHARING_MODE_EXCLUSIVE,
-		&queue_family_indices);
+	#ifdef VMA_USE_ALLOCATOR
+		memcpy(staging_buffer.allocation_info.pMappedData, vertices.data(), gsl::narrow_cast<size_t>(buffer_size));
+	#else
+		void *data;
+		vkMapMemory(m_device, staging_buffer.memory, 0, buffer_size, 0, &data);
+		memcpy(data, vertices.data(), gsl::narrow_cast<size_t>(buffer_size));
+		vkUnmapMemory(m_device, staging_buffer.memory);
+	#endif
 
-	copyBuffer(staging_buffer.buffer, m_vertex_buffer.buffer, buffer_size);
+		createBuffer(
+			buffer_size,
+			VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+	#ifdef VMA_USE_ALLOCATOR
+			VMA_MEMORY_USAGE_GPU_ONLY,
+			0,
+	#else
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+	#endif
+			m_vertex_buffer,
+			queue_family_indices.size() > 1 ? VK_SHARING_MODE_CONCURRENT : VK_SHARING_MODE_EXCLUSIVE,
+			&queue_family_indices);
 
-	destroyBuffer(staging_buffer);
+		copyBuffer(staging_buffer.buffer, m_vertex_buffer.buffer, buffer_size);
+
+		destroyBuffer(staging_buffer);
+	}
 }
 
 auto RenderManager::createIndexBuffer() -> void {
 
+	[[gsl::suppress(type.4)]]{
+		/*
+		Access to this buffer will be granted to both the graphics family to allow the
+		GPU to render from it and the transfer family so we can write to the buffer
+		from another one mapped to CPU memory.
+		*/
+		auto queue_family_indices = std::vector<uint>{
+			gsl::narrow<uint>(m_queue_family_indices.graphics_family) ,
+			gsl::narrow<uint>(m_queue_family_indices.transfer_family)
+		};
 
-	/*
-	Access to this buffer will be granted to both the graphics family to allow the
-	GPU to render from it and the transfer family so we can write to the buffer
-	from another one mapped to CPU memory.
-	*/
-	auto queue_family_indices = std::vector<uint>{
-		gsl::narrow<uint>(m_queue_family_indices.graphics_family) ,
-		gsl::narrow<uint>(m_queue_family_indices.transfer_family)
-	};
+		std::sort(queue_family_indices.begin(), queue_family_indices.end());
+		queue_family_indices.erase(
+			std::unique(queue_family_indices.begin(), queue_family_indices.end()),
+			queue_family_indices.end());
 
-	std::sort(queue_family_indices.begin(), queue_family_indices.end());
-	queue_family_indices.erase(
-		std::unique(queue_family_indices.begin(), queue_family_indices.end()),
-		queue_family_indices.end());
+		auto buffer_size = VkDeviceSize{ gsl::narrow_cast<size_t>(sizeof(indices[0]))*indices.size() };
 
-	auto buffer_size = VkDeviceSize{ sizeof(indices[0])*indices.size() };
+		auto staging_buffer = AllocatedBuffer{};
+		createBuffer(
+			buffer_size,
+			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+	#ifndef VMA_USE_ALLOCATOR
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+	#else
+			VMA_MEMORY_USAGE_CPU_TO_GPU,
+			VMA_ALLOCATION_CREATE_MAPPED_BIT,
+	#endif
+			staging_buffer,
+			VK_SHARING_MODE_EXCLUSIVE,
+			nullptr);
 
-	auto staging_buffer = AllocatedBuffer{};
-	createBuffer(
-		buffer_size,
-		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-#ifndef VMA_USE_ALLOCATOR
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-#else
-		VMA_MEMORY_USAGE_CPU_TO_GPU,
-		VMA_ALLOCATION_CREATE_MAPPED_BIT,
-#endif
-		staging_buffer,
-		VK_SHARING_MODE_EXCLUSIVE,
-		nullptr);
+	#ifdef VMA_USE_ALLOCATOR
+		memcpy(staging_buffer.allocation_info.pMappedData, indices.data(), gsl::narrow_cast<size_t>(buffer_size));
+	#else
+		void *data;
+		vkMapMemory(m_device, staging_buffer.memory, 0, buffer_size, 0, &data);
+		memcpy(data, indices.data(), gsl::narrow_cast<size_t>(buffer_size));
+		vkUnmapMemory(m_device, staging_buffer.memory);
+	#endif
 
-#ifdef VMA_USE_ALLOCATOR
-	memcpy(staging_buffer.allocation_info.pMappedData, indices.data(), gsl::narrow_cast<size_t>(buffer_size));
-#else
-	void *data;
-	vkMapMemory(m_device, staging_buffer.memory, 0, buffer_size, 0, &data);
-	memcpy(data, indices.data(), gsl::narrow_cast<size_t>(buffer_size));
-	vkUnmapMemory(m_device, staging_buffer.memory);
-#endif
+		createBuffer(
+			buffer_size,
+			VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+	#ifdef VMA_USE_ALLOCATOR
+			VMA_MEMORY_USAGE_GPU_ONLY,
+			0,
+	#else
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+	#endif
+			m_index_buffer,
+			queue_family_indices.size() > 1 ? VK_SHARING_MODE_CONCURRENT : VK_SHARING_MODE_EXCLUSIVE,
+			&queue_family_indices);
 
-	createBuffer(
-		buffer_size,
-		VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-#ifdef VMA_USE_ALLOCATOR
-		VMA_MEMORY_USAGE_GPU_ONLY,
-		0,
-#else
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-#endif
-		m_index_buffer,
-		queue_family_indices.size() > 1 ? VK_SHARING_MODE_CONCURRENT : VK_SHARING_MODE_EXCLUSIVE,
-		&queue_family_indices);
+		copyBuffer(staging_buffer.buffer, m_index_buffer.buffer, buffer_size);
 
-	copyBuffer(staging_buffer.buffer, m_index_buffer.buffer, buffer_size);
-
-	destroyBuffer(staging_buffer);
+		destroyBuffer(staging_buffer);
+	}
 }
 
 auto RenderManager::findMemoryType(uint type_filter, VkMemoryPropertyFlags properties)->uint {
@@ -1481,17 +1489,19 @@ auto RenderManager::findMemoryType(uint type_filter, VkMemoryPropertyFlags prope
 	auto memory_properties = VkPhysicalDeviceMemoryProperties{};
 	vkGetPhysicalDeviceMemoryProperties(m_physical_device, &memory_properties);
 
+	[[gsl::suppress(bounds.2)]]{
 	for (uint i = 0; memory_properties.memoryTypeCount; ++i) {
 		if ((type_filter & (1 << i)) &&
 			(memory_properties.memoryTypes[i].propertyFlags & properties) == properties) {
 			return i;
 		}
 	}
+	}
 
 	throw std::runtime_error("We couldn't find an appropriate memory type");
 }
 
-auto RenderManager::copyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size) -> void {
+auto RenderManager::copyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size) noexcept -> void {
 	auto allocate_info = VkCommandBufferAllocateInfo{};
 	allocate_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 	allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
@@ -1580,9 +1590,12 @@ auto RenderManager::recordCommandBuffers() -> void {
 		{
 			vkCmdBindPipeline(m_command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
 
-			VkBuffer vertex_buffers[] = { m_vertex_buffer.buffer };
-			VkDeviceSize offsets[] = { 0 };
+			const VkBuffer vertex_buffers[] = { m_vertex_buffer.buffer };
+			const VkDeviceSize offsets[] = { 0 };
+
+			[[gsl::suppress(bounds.3)]]{
 			vkCmdBindVertexBuffers(m_command_buffers[i], 0, 1, vertex_buffers, offsets);
+			}
 
 			vkCmdBindIndexBuffer(m_command_buffers[i], m_index_buffer.buffer, 0, VK_INDEX_TYPE_UINT16);
 
@@ -1686,7 +1699,8 @@ auto RenderManager::onWindowsResized(GLFWwindow * window, int width, int height)
 		render_manager = reinterpret_cast<RenderManager*>(glfwGetWindowUserPointer(window));
 	}
 
-	render_manager->recreateSwapChain();
+		if (render_manager != nullptr)
+			render_manager->recreateSwapChain();
 
 	std::cout << " - Window resized to (" << width << ", " << height << ")" << std::endl;
 }

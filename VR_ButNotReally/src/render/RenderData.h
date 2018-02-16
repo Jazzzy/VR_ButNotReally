@@ -1,7 +1,15 @@
 #pragma once
 #include <vector>
 #include <array>
+#include <gsl/gsl>
+
+
+#pragma warning(push)
+#include <CppCoreCheck/Warnings.h>
+#pragma warning(disable: ALL_CPPCORECHECK_WARNINGS)
 #include <glm/glm.hpp>
+#pragma warning(pop)
+
 #include <vulkan/vulkan.h>
 
 
@@ -10,7 +18,7 @@ struct Vertex {
 	glm::vec2 pos;
 	glm::vec3 color;
 
-	auto static getBindingDescription() ->VkVertexInputBindingDescription {
+	auto static getBindingDescription() noexcept ->VkVertexInputBindingDescription {
 
 		auto binding_description = VkVertexInputBindingDescription{};
 
@@ -21,7 +29,7 @@ struct Vertex {
 		return binding_description;
 	}
 
-	auto static getAttributeDescriptions()->std::array<VkVertexInputAttributeDescription, 2> {
+	auto static getAttributeDescriptions() noexcept ->std::array<VkVertexInputAttributeDescription, 2> {
 
 		auto attribute_descriptions = std::array<VkVertexInputAttributeDescription, 2>{};
 
@@ -39,6 +47,10 @@ struct Vertex {
 	}
 };
 
+
+#pragma warning(push)
+#include <CppCoreCheck/Warnings.h>
+#pragma warning(disable: 26426)
 const auto vertices = std::vector<Vertex>{
 	{ { -0.5f, -0.5f },{ 1.0f, 0.0f, 0.0f } },
 	{ {  0.5f, -0.5f },{ 0.0f, 1.0f, 0.0f } },
@@ -49,4 +61,6 @@ const auto vertices = std::vector<Vertex>{
 const auto indices = std::vector<uint16_t>{
 	0, 1, 2, 2, 3, 0
 };
+#pragma warning(pop)
+
 
