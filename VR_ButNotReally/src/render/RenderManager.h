@@ -503,13 +503,18 @@ private:
 	*/
 	auto createFences() -> void;
 
+	/**
+	Sets up the beggining of a frame. Setting up the recording of a
+	one time command buffer to submit to the rendering queue.
+	*/
+	auto beginFrame() -> void;
 
 	/**
-	Renders a frame to the screen. It can be called after
-	updating the application state to use the CPU to do that
-	while the previous frame is being rendered.
+	Finishes the rendering stages and submits all the necessary information
+	to the graphics card for rendering.
 	*/
-	[[gsl::suppress(bounds.3)]] auto drawFrame() -> void;
+	auto endFrame() -> void;
+
 
 	/**
 	Handles the event of resizing the window to set up the appropriate

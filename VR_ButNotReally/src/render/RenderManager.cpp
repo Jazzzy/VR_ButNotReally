@@ -108,7 +108,8 @@ auto RenderManager::recreateSwapChain() -> void {
 
 auto RenderManager::loopIteration() noexcept -> void {
 	glfwPollEvents();
-	drawFrame();
+	beginFrame();
+	endFrame();
 }
 
 auto RenderManager::cleanup() noexcept -> void {
@@ -1684,85 +1685,149 @@ auto RenderManager::createFences() -> void {
 
 }
 
-auto RenderManager::drawFrame() -> void {
-	//vkQueueWaitIdle(m_present_queue);
+auto RenderManager::beginFrame() -> void {
 
-	if (m_command_buffer_submitted[m_current_command_buffer]) {
-		if (vkWaitForFences(
-			m_device,
-			1,
-			&m_command_buffer_fences[m_current_command_buffer],
-			VK_TRUE,
-			std::numeric_limits<uint64_t>::max())
-			!= VK_SUCCESS) {
-			std::runtime_error("We couldn't wait for the fence involving the current command buffer");
+	/*
+	We wait for the fence that indicates that we can use the current
+	command buffer
+	*/
+	{
+		if (m_command_buffer_submitted[m_current_command_buffer]) {
+			if (vkWaitForFences(
+				m_device,
+				1,
+				&m_command_buffer_fences[m_current_command_buffer],
+				VK_TRUE,
+				std::numeric_limits<uint64_t>::max())
+				!= VK_SUCCESS) {
+				std::runtime_error("We couldn't wait for the fence involving the current command buffer");
+			}
+		}
+
+		if (vkResetFences(m_device, 1, &m_command_buffer_fences[m_current_command_buffer])) {
+			std::runtime_error("We couldn't reset the fence involving the current command buffer");
 		}
 	}
 
-	if (vkResetFences(m_device, 1, &m_command_buffer_fences[m_current_command_buffer])) {
-		std::runtime_error("We couldn't reset the fence involving the current command buffer");
+	/*
+	@TODO: Beginning of the recording of the current Command Buffer
+	using the m_current_command_buffer index and maybe set up some data of the
+	next "render pass begin info".
+
+	https://github.com/Novum/vkQuake/blob/master/Quake/gl_vidsdl.c @ line 1787, 1823
+	https://github.com/ocornut/imgui/blob/master/examples/vulkan_example/main.cpp @ line 507
+	*/
+
+
+	/*
+	@TODO: Beginning of Render Pass using m_current_swapchain_buffer
+
+	https://github.com/Novum/vkQuake/blob/master/Quake/gl_screen.c @ line 985(begin render pass), line 987 (acquire next image)
+	https://github.com/Novum/vkQuake/blob/master/Quake/view.c @ line 888
+	https://github.com/Novum/vkQuake/blob/master/Quake/gl_rmain.c @ line 554, 524
+	https://github.com/ocornut/imgui/blob/master/examples/vulkan_example/main.cpp @ line 507
+	*/
+
+
+	/*
+	We acquire the intex to the image we will render next
+	after we begin recording of the command buffer and start the current render pass.
+	*/
+	{
+		const auto result = vkAcquireNextImageKHR(
+			m_device,
+			m_swap_chain,
+			/*
+			This is the timeout in ns for an image to become available
+			*/
+			std::numeric_limits<uint64_t>::max(),
+			m_image_available_semaphores[m_current_command_buffer],
+			VK_NULL_HANDLE,
+			&m_current_swapchain_buffer);
+
+		if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+			recreateSwapChain();
+			return;
+		}
+		else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+			throw std::runtime_error("We couldn't acquire an image to render to");
+		}
 	}
 
-	auto result = vkAcquireNextImageKHR(
-		m_device,
-		m_swap_chain,
-		/*
-		This is the timeout in ns for an image to become available
-		*/
-		std::numeric_limits<uint64_t>::max(),
-		m_image_available_semaphores[m_current_command_buffer],
-		VK_NULL_HANDLE,
-		&m_current_swapchain_buffer);
+}
 
-	if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-		recreateSwapChain();
-		return;
-	}
-	else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
-		throw std::runtime_error("We couldn't acquire an image to render to");
-	}
+auto RenderManager::endFrame() -> void {
 
-	auto submit_info = VkSubmitInfo{};
-	submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	/*
+	@TODO: Ending of Render Pass and Command Buffer (in that order)
 
-	const VkSemaphore wait_semaphores[] = { m_image_available_semaphores[m_current_command_buffer] };
-	const VkPipelineStageFlags wait_stages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
-	submit_info.waitSemaphoreCount = 1;
-	submit_info.pWaitSemaphores = wait_semaphores;
-	submit_info.pWaitDstStageMask = wait_stages;
-	submit_info.commandBufferCount = 1;
-	submit_info.pCommandBuffers = &m_command_buffers[m_current_command_buffer];
+	https://github.com/ocornut/imgui/blob/master/examples/vulkan_example/main.cpp @ line 543
+	*/
+
+
+	/*
+	Semaphore that indicates that rendering is done
+	*/
 	VkSemaphore signal_semaphores[] = { m_render_finished_semaphores[m_current_command_buffer] };
-	submit_info.signalSemaphoreCount = 1;
-	submit_info.pSignalSemaphores = signal_semaphores;
+
+	/*
+	We submit the current command buffer to the graphics queue
+	*/
+	[[gsl::suppress(bounds.3)]]
+	{
+		auto submit_info = VkSubmitInfo{};
+		submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+
+		const VkSemaphore wait_semaphores[] = { m_image_available_semaphores[m_current_command_buffer] };
+		const VkPipelineStageFlags wait_stages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+		submit_info.waitSemaphoreCount = 1;
+		submit_info.pWaitSemaphores = wait_semaphores;
+		submit_info.pWaitDstStageMask = wait_stages;
+		submit_info.commandBufferCount = 1;
+		submit_info.pCommandBuffers = &m_command_buffers[m_current_command_buffer];
+		submit_info.signalSemaphoreCount = 1;
+		submit_info.pSignalSemaphores = signal_semaphores;
 
 
-	if (vkQueueSubmit(m_graphics_queue, 1, &submit_info, m_command_buffer_fences[m_current_command_buffer]) != VK_SUCCESS) {
-		throw std::runtime_error("We couldn't submit our command buffer");
+		if (vkQueueSubmit(m_graphics_queue, 1, &submit_info, m_command_buffer_fences[m_current_command_buffer]) != VK_SUCCESS) {
+			throw std::runtime_error("We couldn't submit our command buffer");
+		}
 	}
 
-	auto present_info = VkPresentInfoKHR{};
-	present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-	present_info.waitSemaphoreCount = 1;
-	present_info.pWaitSemaphores = signal_semaphores;
-	VkSwapchainKHR swap_chains[] = { m_swap_chain };
-	present_info.swapchainCount = 1;
-	present_info.pSwapchains = swap_chains;
-	present_info.pImageIndices = &m_current_swapchain_buffer;
-	present_info.pResults = nullptr;
-
-
-	result = vkQueuePresentKHR(m_present_queue, &present_info);
-
-	if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
-		recreateSwapChain();
-	}
-	else if (result != VK_SUCCESS) {
-		throw std::runtime_error("We couldn't submit the presentation info to the queue");
+	/*
+	We express that we have submitted the current command buffer and update
+	the index of the current command buffer we are using.
+	*/
+	{
+		m_command_buffer_submitted[m_current_command_buffer] = true;
+		m_current_command_buffer = (m_current_command_buffer + 1) % m_command_buffers.size();
 	}
 
-	m_command_buffer_submitted[m_current_command_buffer] = true;
-	m_current_command_buffer = (m_current_command_buffer + 1) % m_command_buffers.size();
+	/*
+	We finally present the image
+	*/
+	[[gsl::suppress(bounds.3)]]
+	{
+		auto present_info = VkPresentInfoKHR{};
+		present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+		present_info.waitSemaphoreCount = 1;
+		present_info.pWaitSemaphores = signal_semaphores;
+		VkSwapchainKHR swap_chains[] = { m_swap_chain };
+		present_info.swapchainCount = 1;
+		present_info.pSwapchains = swap_chains;
+		present_info.pImageIndices = &m_current_swapchain_buffer;
+		present_info.pResults = nullptr;
+
+
+		const auto result = vkQueuePresentKHR(m_present_queue, &present_info);
+
+		if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+			recreateSwapChain();
+		}
+		else if (result != VK_SUCCESS) {
+			throw std::runtime_error("We couldn't submit the presentation info to the queue");
+		}
+	}
 }
 
 auto RenderManager::onWindowsResized(GLFWwindow * window, int width, int height) -> void {
