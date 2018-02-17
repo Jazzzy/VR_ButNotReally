@@ -399,7 +399,7 @@ private:
 
 	@see m_swap_chain_image_views
 	*/
-	auto createImageViews() -> void;
+	auto createSwapChainImageViews() -> void;
 
 	/**
 	Creates the render pass that will be used to then create
@@ -496,6 +496,21 @@ private:
 	@see m_texture_image
 	*/
 	auto createTextureImage() -> void;
+
+	/**
+	Creates a texture image view into the texture image
+
+	@see m_texture_image_view
+	*/
+	auto createTextureImageView() -> void;
+
+	/**
+	Creates a sampler to sample the textures
+	used in the rendering phase.
+
+	@see m_texture_sampler
+	*/
+	auto createTextureSampler() -> void;
 
 	/**
 	Helper function that creates a vulkan buffer in a general way.
@@ -672,6 +687,16 @@ private:
 		uint width,
 		uint heigth) -> void;
 
+	/**
+	Helped function that creates an image view to the
+	provided image.
+
+	@param The image to create a view from
+	@param The format of the view
+	@return An image view into the provided image
+	*/
+	auto createImageView(VkImage image, VkFormat format)->VkImageView;
+
 	/* ---------------------------------------------------------------------------------------------- */
 	/* ---------------------------------------- DATA MEMBERS ---------------------------------------- */
 	/* ---------------------------------------------------------------------------------------------- */
@@ -737,6 +762,10 @@ private:
 	AllocatedBuffer m_uniform_buffer{};
 
 	AllocatedImage m_texture_image{};
+
+	VkImageView m_texture_image_view{};
+
+	VkSampler m_texture_sampler{};
 
 	VkDescriptorPool m_descriptor_pool{};
 
