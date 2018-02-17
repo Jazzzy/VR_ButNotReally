@@ -1,4 +1,4 @@
-#include "./render/RenderManager.h"
+#include "./render/Renderer.h"
 #include "./utils/Utils.h"
 
 int main() {
@@ -13,9 +13,11 @@ int main() {
 
 	{
 		try {
-			RenderManager render_manager;
-			while (!render_manager.shouldClose()) {
-				render_manager.update();
+			Renderer renderer;
+			while (!renderer.shouldClose()) {
+				glfwPollEvents();
+				renderer.beginFrame();
+				renderer.endFrame();
 			}
 		}
 		catch (const std::exception& exception) {

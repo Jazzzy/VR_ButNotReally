@@ -1,5 +1,5 @@
 #include <limits>
-#include "RenderManager.h"
+#include "Renderer.h"
 #include "../Configuration.h"
 #include <map>
 #include <set>
@@ -23,24 +23,31 @@
 #pragma warning(pop)
 #endif
 
-RenderManager::RenderManager() : m_instance() {
+
+/*
+We include the compiled shader code we are going to use.
+*/
+#include "./shaders/triangle_frag.hpp"
+#include "./shaders/triangle_vert.hpp"
+
+Renderer::Renderer() : m_instance() {
 	initWindow();
 	initVulkan();
 };
 
-RenderManager::~RenderManager() {
+Renderer::~Renderer() {
 	cleanup();
 };
 
-auto RenderManager::shouldClose() const noexcept -> bool {
+auto Renderer::shouldClose() const noexcept -> bool {
 	return glfwWindowShouldClose(m_window.get());
 }
 
-auto RenderManager::update() noexcept -> void {
+auto Renderer::update() noexcept -> void {
 	loopIteration();
 }
 
-auto RenderManager::initWindow() noexcept -> void {
+auto Renderer::initWindow() noexcept -> void {
 	glfwInit();
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 
@@ -50,11 +57,11 @@ auto RenderManager::initWindow() noexcept -> void {
 		config::app_name, nullptr, nullptr));
 
 	glfwSetWindowUserPointer(m_window.get(), this);
-	glfwSetWindowSizeCallback(m_window.get(), RenderManager::onWindowsResized);
+	glfwSetWindowSizeCallback(m_window.get(), Renderer::onWindowsResized);
 
 }
 
-auto RenderManager::initVulkan() noexcept(false) -> void {
+auto Renderer::initVulkan() noexcept(false) -> void {
 	m_instance = createInstance();
 	setupDebugCallback();
 	createSurface();
@@ -64,19 +71,21 @@ auto RenderManager::initVulkan() noexcept(false) -> void {
 	createSwapChain();
 	createImageViews();
 	createRenderPass();
+	createDescriptorSetLayout();
 	createGraphicsPipeline();
 	createFramebuffers();
 	createGraphicsCommandPool();
 	createTransferCommandPool();
 	createVertexBuffer();
 	createIndexBuffer();
+	createUniformBuffer();
 	createCommandBuffers();
 	recordCommandBuffers();
 	createSemaphores();
 	createFences();
 }
 
-auto RenderManager::recreateSwapChain() -> void {
+auto Renderer::recreateSwapChain() -> void {
 	auto width = 0;
 	auto height = 0;
 	glfwGetWindowSize(m_window.get(), &width, &height);
@@ -105,21 +114,16 @@ auto RenderManager::recreateSwapChain() -> void {
 	recordCommandBuffers();
 }
 
-
-auto RenderManager::loopIteration() noexcept -> void {
-	glfwPollEvents();
-	beginFrame();
-	endFrame();
-}
-
-auto RenderManager::cleanup() noexcept -> void {
+auto Renderer::cleanup() noexcept -> void {
 	vkDeviceWaitIdle(m_device);
 
 	cleanupSwapChain();
 
+	vkDestroyDescriptorSetLayout(m_device, m_descriptor_set_layout, nullptr);
+	destroyBuffer(m_uniform_buffer);
+
 	destroyBuffer(m_index_buffer);
 	destroyBuffer(m_vertex_buffer);
-
 
 	for (auto i = 0; i < m_command_buffers.size(); ++i) {
 		vkDestroyFence(m_device, m_command_buffer_fences[i], nullptr);
@@ -153,7 +157,7 @@ auto RenderManager::cleanup() noexcept -> void {
 	glfwTerminate();
 }
 
-auto RenderManager::cleanupSwapChain() noexcept -> void {
+auto Renderer::cleanupSwapChain() noexcept -> void {
 
 	for (const auto& framebuffer : m_swap_chain_framebuffers) {
 		vkDestroyFramebuffer(m_device, framebuffer, nullptr);
@@ -178,7 +182,7 @@ auto RenderManager::cleanupSwapChain() noexcept -> void {
 
 }
 
-auto RenderManager::createInstance() noexcept(false) -> VkInstance {
+auto Renderer::createInstance() noexcept(false) -> VkInstance {
 
 	if (config::validation_layers_enabled && !checkValidationLayerSupport()) {
 		throw std::runtime_error("Validation layers were requested but were not available.");
@@ -246,7 +250,7 @@ auto RenderManager::createInstance() noexcept(false) -> VkInstance {
 	return instance;
 }
 
-[[gsl::suppress(bounds)]] auto RenderManager::printInstanceExtensions(const std::vector<VkExtensionProperties>& extensions) const -> void {
+[[gsl::suppress(bounds)]] auto Renderer::printInstanceExtensions(const std::vector<VkExtensionProperties>& extensions) const -> void {
 
 	if (extensions.size() == 0) {
 		std::cout << "\tNo available extensions" << std::endl;
@@ -261,7 +265,7 @@ auto RenderManager::createInstance() noexcept(false) -> VkInstance {
 
 }
 
-auto RenderManager::checkInstanceExtensionsNamesAvailable(const std::vector<const char*>& required_extensions, const std::vector<VkExtensionProperties>& available_extensions) const -> bool {
+auto Renderer::checkInstanceExtensionsNamesAvailable(const std::vector<const char*>& required_extensions, const std::vector<VkExtensionProperties>& available_extensions) const -> bool {
 
 	if (required_extensions.size() <= 0) {
 		std::cerr << "There are no exceptions required, and there should be some if we want to check them" << std::endl;
@@ -294,7 +298,7 @@ auto RenderManager::checkInstanceExtensionsNamesAvailable(const std::vector<cons
 	return all_found;
 }
 
-auto RenderManager::checkValidationLayerSupport() const noexcept -> bool {
+auto Renderer::checkValidationLayerSupport() const noexcept -> bool {
 
 	uint layers_found;
 
@@ -329,7 +333,7 @@ auto RenderManager::checkValidationLayerSupport() const noexcept -> bool {
 	return found_all_layers;
 }
 
-[[gsl::suppress(bounds.1)]] auto RenderManager::getRequiredExtensions() const noexcept -> std::vector<const char*> {
+[[gsl::suppress(bounds.1)]] auto Renderer::getRequiredExtensions() const noexcept -> std::vector<const char*> {
 
 	auto extension_count = uint{ 0 };
 	const char ** glfw_extensions = glfwGetRequiredInstanceExtensions(&extension_count);
@@ -350,7 +354,7 @@ auto RenderManager::checkValidationLayerSupport() const noexcept -> bool {
 
 #pragma warning( push )
 #pragma warning( disable : 4229)
-auto VKAPI_ATTR VKAPI_CALL RenderManager::debugReportCallback(
+auto VKAPI_ATTR VKAPI_CALL Renderer::debugReportCallback(
 	VkDebugReportFlagsEXT                       flags,
 	VkDebugReportObjectTypeEXT                  object_type,
 	uint64_t                                    object,
@@ -388,7 +392,7 @@ auto VKAPI_ATTR VKAPI_CALL RenderManager::debugReportCallback(
 }
 #pragma warning( pop )
 
-auto RenderManager::setupDebugCallback() -> void {
+auto Renderer::setupDebugCallback() -> void {
 
 	[[gsl::suppress(6285)]]{
 	if (!config::instance_extensions_enabled || !config::validation_layers_enabled) {
@@ -416,7 +420,7 @@ auto RenderManager::setupDebugCallback() -> void {
 		}
 }
 
-auto RenderManager::createDebugReportCallbackEXT(
+auto Renderer::createDebugReportCallbackEXT(
 	const VkInstance& instance,
 	const VkDebugReportCallbackCreateInfoEXT * create_info,
 	const VkAllocationCallbacks* allocator,
@@ -436,7 +440,7 @@ auto RenderManager::createDebugReportCallbackEXT(
 
 }
 
-auto RenderManager::destroyDebugReportCallbackEXT(
+auto Renderer::destroyDebugReportCallbackEXT(
 	const VkInstance& instance,
 	const VkDebugReportCallbackEXT& callback,
 	const VkAllocationCallbacks* allocator
@@ -450,7 +454,7 @@ auto RenderManager::destroyDebugReportCallbackEXT(
 	}
 }
 
-auto RenderManager::createSurface() -> void {
+auto Renderer::createSurface() -> void {
 
 #ifdef _WIN32
 	auto create_info = VkWin32SurfaceCreateInfoKHR{};
@@ -474,7 +478,7 @@ auto RenderManager::createSurface() -> void {
 
 }
 
-auto RenderManager::pickPhysicalDevice() -> void {
+auto Renderer::pickPhysicalDevice() -> void {
 
 	auto count = uint{};
 
@@ -519,7 +523,7 @@ auto RenderManager::pickPhysicalDevice() -> void {
 	std::cout << "The selected physical device is:" << std::endl << m_physical_device << std::endl;
 }
 
-auto RenderManager::physicalDeviceSuitability(const VkPhysicalDevice & device) const noexcept -> std::tuple<bool, int> {
+auto Renderer::physicalDeviceSuitability(const VkPhysicalDevice & device) const noexcept -> std::tuple<bool, int> {
 
 	auto features = VkPhysicalDeviceFeatures{};
 	auto properties = VkPhysicalDeviceProperties{};
@@ -564,7 +568,7 @@ auto RenderManager::physicalDeviceSuitability(const VkPhysicalDevice & device) c
 	return std::make_tuple(true, score);
 }
 
-auto RenderManager::findQueueFamilies(const VkPhysicalDevice& physical_device, PrintOptions print_options) const -> QueueFamilyIndices {
+auto Renderer::findQueueFamilies(const VkPhysicalDevice& physical_device, PrintOptions print_options) const -> QueueFamilyIndices {
 
 	auto queue_family_count = uint{};
 	vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_family_count, nullptr);
@@ -610,7 +614,7 @@ auto RenderManager::findQueueFamilies(const VkPhysicalDevice& physical_device, P
 	return indices;
 }
 
-auto RenderManager::createLogicalDevice() -> void {
+auto Renderer::createLogicalDevice() -> void {
 
 	m_queue_family_indices = findQueueFamilies(m_physical_device, PrintOptions::none);
 
@@ -661,7 +665,7 @@ auto RenderManager::createLogicalDevice() -> void {
 	vkGetDeviceQueue(m_device, m_queue_family_indices.transfer_family, 0, &m_transfer_queue);
 }
 
-auto RenderManager::createAllocator() noexcept ->void {
+auto Renderer::createAllocator() noexcept ->void {
 #ifdef VMA_USE_ALLOCATOR
 	auto create_info = VmaAllocatorCreateInfo{};
 	create_info.physicalDevice = m_physical_device;
@@ -671,7 +675,7 @@ auto RenderManager::createAllocator() noexcept ->void {
 #endif
 }
 
-auto RenderManager::checkDeviceExtensionSupport(const VkPhysicalDevice& device) const -> bool {
+auto Renderer::checkDeviceExtensionSupport(const VkPhysicalDevice& device) const -> bool {
 
 	auto extension_count = uint{};
 	vkEnumerateDeviceExtensionProperties(device, nullptr, &extension_count, nullptr);
@@ -695,7 +699,7 @@ auto RenderManager::checkDeviceExtensionSupport(const VkPhysicalDevice& device) 
 	return true;
 }
 
-auto RenderManager::querySwapChainSupport(const VkPhysicalDevice& device) const->SwapChainSupportDetails {
+auto Renderer::querySwapChainSupport(const VkPhysicalDevice& device) const->SwapChainSupportDetails {
 
 	auto details = SwapChainSupportDetails{};
 
@@ -724,7 +728,7 @@ auto RenderManager::querySwapChainSupport(const VkPhysicalDevice& device) const-
 }
 
 
-auto RenderManager::pickSurfaceChainFormat(const std::vector<VkSurfaceFormatKHR>& available_formats) const ->VkSurfaceFormatKHR {
+auto Renderer::pickSurfaceChainFormat(const std::vector<VkSurfaceFormatKHR>& available_formats) const ->VkSurfaceFormatKHR {
 
 
 	if (available_formats.size() == 1 && available_formats[0].format == VK_FORMAT_UNDEFINED) {	// Vulkan doesn't have a preferred format
@@ -748,7 +752,7 @@ auto RenderManager::pickSurfaceChainFormat(const std::vector<VkSurfaceFormatKHR>
 
 }
 
-auto RenderManager::pickSurfacePresentMode(const std::vector<VkPresentModeKHR>& available_modes)  const noexcept -> VkPresentModeKHR {
+auto Renderer::pickSurfacePresentMode(const std::vector<VkPresentModeKHR>& available_modes)  const noexcept -> VkPresentModeKHR {
 
 
 	for (const auto& desired_mode : config::preferred_present_modes_sorted) {
@@ -761,7 +765,7 @@ auto RenderManager::pickSurfacePresentMode(const std::vector<VkPresentModeKHR>& 
 	return VK_PRESENT_MODE_FIFO_KHR;	// We are guaranteed that this mode is supported, so in theory we should never reach this point.
 }
 
-auto RenderManager::pickSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities)  const noexcept -> VkExtent2D {
+auto Renderer::pickSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities)  const noexcept -> VkExtent2D {
 
 	if (capabilities.currentExtent.width != std::numeric_limits<uint>::max()) {
 		return capabilities.currentExtent;
@@ -791,7 +795,7 @@ auto RenderManager::pickSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities)
 }
 
 
-auto RenderManager::createSwapChain() -> void {
+auto Renderer::createSwapChain() -> void {
 
 	auto swap_chain_support = querySwapChainSupport(m_physical_device);
 
@@ -892,7 +896,7 @@ auto RenderManager::createSwapChain() -> void {
 	m_swap_chain_extent = extent;
 }
 
-auto RenderManager::createImageViews() -> void {
+auto Renderer::createImageViews() -> void {
 
 	m_swap_chain_image_views.resize(m_swap_chain_images.size());
 
@@ -919,7 +923,7 @@ auto RenderManager::createImageViews() -> void {
 	}
 }
 
-auto RenderManager::createRenderPass() -> void {
+auto Renderer::createRenderPass() -> void {
 
 	std::cout << "Creating Render Pass" << std::endl;
 
@@ -974,11 +978,25 @@ auto RenderManager::createRenderPass() -> void {
 }
 
 
-#include "./shaders/triangle_frag.hpp"
-#include "./shaders/triangle_vert.hpp"
+auto Renderer::createDescriptorSetLayout() -> void {
+	auto layout_binding = VkDescriptorSetLayoutBinding{};
+	layout_binding.binding = 0;
+	layout_binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	layout_binding.descriptorCount = 1;
+	layout_binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+	layout_binding.pImmutableSamplers = nullptr; // default value
 
+	auto create_info = VkDescriptorSetLayoutCreateInfo{};
+	create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	create_info.bindingCount = 1;
+	create_info.pBindings = &layout_binding;
 
-auto RenderManager::createGraphicsPipeline() -> void {
+	if (vkCreateDescriptorSetLayout(m_device, &create_info, nullptr, &m_descriptor_set_layout) != VK_SUCCESS) {
+		throw std::runtime_error("We couldn't create the descriptor set layout");
+	}
+}
+
+auto Renderer::createGraphicsPipeline() -> void {
 
 	auto vert_shader_code = readBinaryArrayToChars(triangle_vert);
 	auto frag_shader_code = readBinaryArrayToChars(triangle_frag);
@@ -1144,8 +1162,11 @@ auto RenderManager::createGraphicsPipeline() -> void {
 
 	auto pipeline_layout_create_info = VkPipelineLayoutCreateInfo{};
 	pipeline_layout_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-	pipeline_layout_create_info.setLayoutCount = 0;
-	pipeline_layout_create_info.pSetLayouts = nullptr;
+	/*
+	We set the descriptor set layours over here.
+	*/
+	pipeline_layout_create_info.setLayoutCount = 1;
+	pipeline_layout_create_info.pSetLayouts = &m_descriptor_set_layout;
 	pipeline_layout_create_info.pushConstantRangeCount = 0;
 	pipeline_layout_create_info.pPushConstantRanges = nullptr;
 
@@ -1184,7 +1205,7 @@ auto RenderManager::createGraphicsPipeline() -> void {
 
 }
 
-auto RenderManager::createShaderModule(const std::vector<char>& code) const -> VkShaderModule {
+auto Renderer::createShaderModule(const std::vector<char>& code) const -> VkShaderModule {
 	std::cout << "Creating Shader Module " << std::endl;
 
 	auto create_info = VkShaderModuleCreateInfo{};
@@ -1205,7 +1226,7 @@ auto RenderManager::createShaderModule(const std::vector<char>& code) const -> V
 
 }
 
-auto RenderManager::createFramebuffers() ->  void {
+auto Renderer::createFramebuffers() ->  void {
 
 	std::cout << "Creating Framebuffers " << std::endl;
 
@@ -1240,7 +1261,7 @@ auto RenderManager::createFramebuffers() ->  void {
 
 }
 
-auto RenderManager::createGraphicsCommandPool() ->  void {
+auto Renderer::createGraphicsCommandPool() ->  void {
 	std::cout << "Creating Graphics Command Pool " << std::endl;
 
 	auto command_pool_create_info = VkCommandPoolCreateInfo{};
@@ -1265,7 +1286,7 @@ auto RenderManager::createGraphicsCommandPool() ->  void {
 	std::cout << "\tGraphics Command Pool Created" << std::endl << std::endl;
 }
 
-auto RenderManager::createTransferCommandPool() ->  void {
+auto Renderer::createTransferCommandPool() ->  void {
 	std::cout << "Creating Transfer Command Pool " << std::endl;
 
 	auto command_pool_create_info = VkCommandPoolCreateInfo{};
@@ -1290,7 +1311,7 @@ auto RenderManager::createTransferCommandPool() ->  void {
 	std::cout << "\tTransfer Command Pool Created" << std::endl << std::endl;
 }
 
-auto RenderManager::createBuffer(
+auto Renderer::createBuffer(
 	VkDeviceSize size,
 	VkBufferUsageFlags usage,
 #ifdef VMA_USE_ALLOCATOR
@@ -1358,7 +1379,7 @@ auto RenderManager::createBuffer(
 #endif
 }
 
-auto RenderManager::destroyBuffer(
+auto Renderer::destroyBuffer(
 	AllocatedBuffer& allocated_buffer
 ) noexcept -> void {
 
@@ -1371,7 +1392,7 @@ auto RenderManager::destroyBuffer(
 
 }
 
-auto RenderManager::createVertexBuffer() -> void {
+auto Renderer::createVertexBuffer() -> void {
 
 	[[gsl::suppress(type.4)]]{
 
@@ -1434,7 +1455,7 @@ auto RenderManager::createVertexBuffer() -> void {
 	}
 }
 
-auto RenderManager::createIndexBuffer() -> void {
+auto Renderer::createIndexBuffer() -> void {
 
 	[[gsl::suppress(type.4)]]{
 		/*
@@ -1496,7 +1517,26 @@ auto RenderManager::createIndexBuffer() -> void {
 	}
 }
 
-auto RenderManager::findMemoryType(uint type_filter, VkMemoryPropertyFlags properties)->uint {
+auto Renderer::createUniformBuffer() -> void {
+
+	auto buffer_size = VkDeviceSize{ gsl::narrow_cast<size_t>(sizeof(UniformBufferObject)) };
+
+	createBuffer(
+		buffer_size,
+		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+#ifndef VMA_USE_ALLOCATOR
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+#else
+		VMA_MEMORY_USAGE_CPU_TO_GPU,
+		VMA_ALLOCATION_CREATE_MAPPED_BIT,
+#endif
+		m_uniform_buffer,
+		VK_SHARING_MODE_EXCLUSIVE,
+		nullptr);
+
+}
+
+auto Renderer::findMemoryType(uint type_filter, VkMemoryPropertyFlags properties)->uint {
 
 	auto memory_properties = VkPhysicalDeviceMemoryProperties{};
 	vkGetPhysicalDeviceMemoryProperties(m_physical_device, &memory_properties);
@@ -1513,7 +1553,7 @@ auto RenderManager::findMemoryType(uint type_filter, VkMemoryPropertyFlags prope
 	throw std::runtime_error("We couldn't find an appropriate memory type");
 }
 
-auto RenderManager::copyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size) noexcept -> void {
+auto Renderer::copyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size) noexcept -> void {
 	auto allocate_info = VkCommandBufferAllocateInfo{};
 	allocate_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 	allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
@@ -1548,7 +1588,7 @@ auto RenderManager::copyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size) no
 	vkFreeCommandBuffers(m_device, m_transfer_command_pool, 1, &command_buffer);
 }
 
-auto RenderManager::createCommandBuffers() ->  void {
+auto Renderer::createCommandBuffers() ->  void {
 	std::cout << "Creating Command Buffers " << std::endl;
 
 	m_command_buffers.resize(m_swap_chain_framebuffers.size());
@@ -1579,7 +1619,7 @@ auto RenderManager::createCommandBuffers() ->  void {
 
 }
 
-auto RenderManager::recordCommandBuffers() -> void {
+auto Renderer::recordCommandBuffers() -> void {
 	std::cout << "Recording Command Buffers " << std::endl;
 
 
@@ -1634,7 +1674,7 @@ auto RenderManager::recordCommandBuffers() -> void {
 	std::cout << "\tCommand Buffers Recorded" << std::endl << std::endl;
 }
 
-auto RenderManager::createSemaphores() -> void {
+auto Renderer::createSemaphores() -> void {
 
 	std::cout << "Creating Semaphores" << std::endl;
 
@@ -1665,7 +1705,7 @@ auto RenderManager::createSemaphores() -> void {
 
 }
 
-auto RenderManager::createFences() -> void {
+auto Renderer::createFences() -> void {
 
 	std::cout << "Creating Fences" << std::endl;
 
@@ -1685,7 +1725,7 @@ auto RenderManager::createFences() -> void {
 
 }
 
-auto RenderManager::beginFrame() -> void {
+auto Renderer::beginFrame() -> void {
 
 	/*
 	We wait for the fence that indicates that we can use the current
@@ -1756,7 +1796,7 @@ auto RenderManager::beginFrame() -> void {
 
 }
 
-auto RenderManager::endFrame() -> void {
+auto Renderer::endFrame() -> void {
 
 	/*
 	@TODO: Ending of Render Pass and Command Buffer (in that order)
@@ -1794,10 +1834,10 @@ auto RenderManager::endFrame() -> void {
 		}
 	}
 
-	/*
-	We express that we have submitted the current command buffer and update
-	the index of the current command buffer we are using.
-	*/
+		/*
+		We express that we have submitted the current command buffer and update
+		the index of the current command buffer we are using.
+		*/
 	{
 		m_command_buffer_submitted[m_current_command_buffer] = true;
 		m_current_command_buffer = (m_current_command_buffer + 1) % m_command_buffers.size();
@@ -1830,12 +1870,12 @@ auto RenderManager::endFrame() -> void {
 	}
 }
 
-auto RenderManager::onWindowsResized(GLFWwindow * window, int width, int height) -> void {
+auto Renderer::onWindowsResized(GLFWwindow * window, int width, int height) -> void {
 
-	RenderManager* render_manager = nullptr;
+	Renderer* render_manager = nullptr;
 
 	[[gsl::suppress(type.1)]]{
-		render_manager = reinterpret_cast<RenderManager*>(glfwGetWindowUserPointer(window));
+		render_manager = reinterpret_cast<Renderer*>(glfwGetWindowUserPointer(window));
 	}
 
 		if (render_manager != nullptr)

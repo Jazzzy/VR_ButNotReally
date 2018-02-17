@@ -48,6 +48,8 @@ struct AllocatedBuffer {
 
 #else
 
+#pragma message ( "This program is meant to currently use VMA allocation" )
+
 struct AllocatedBuffer {
 	VkBuffer buffer{};
 	VkDeviceMemory memory{};
@@ -64,7 +66,7 @@ Used for managing all the rendering logic of the application.
 Manages creation, destruction and use of all the resources necessary
 to render to the screen using the Vulkan API.
 */
-class RenderManager
+class Renderer
 {
 private:
 	using WindowPtr = std::unique_ptr<GLFWwindow, GLFWWindowDestroyer>;
@@ -76,22 +78,28 @@ public:
 	Since we tie a lot of the resources to this instance and we need to
 	manage them only from here the copy and move functionalities are not allowed.
 	*/
-	[[gsl::suppress(26439)]] RenderManager();
-	RenderManager(const RenderManager&) = delete;
-	RenderManager& operator=(const RenderManager&) = delete;
-	RenderManager(RenderManager&&) = delete;
-	RenderManager& operator=(RenderManager&&) = delete;
-	~RenderManager();
+	[[gsl::suppress(26439)]] Renderer();
+	Renderer(const Renderer&) = delete;
+	Renderer& operator=(const Renderer&) = delete;
+	Renderer(Renderer&&) = delete;
+	Renderer& operator=(Renderer&&) = delete;
+	~Renderer();
 
-	/* -------------------------------------------------------------------------------------------------- */
-	/* ---------------------------------------- FUNCTION MEMBERS ---------------------------------------- */
-	/* -------------------------------------------------------------------------------------------------- */
+	/* --------------------------------------------------------------------------------------------------------- */
+	/* ---------------------------------------- PUBLIC FUNCTION MEMBERS ---------------------------------------- */
+	/* --------------------------------------------------------------------------------------------------------- */
 
 	/**
-	Runs a tick of the render manager once it is initializated,
-	it is meant to be included in a "game loop" type of loop.
+	Sets up the beggining of a frame. Setting up the recording of a
+	one time command buffer to submit to the rendering queue.
 	*/
-	auto update() noexcept -> void;
+	auto beginFrame() -> void;
+
+	/**
+	Finishes the rendering stages and submits all the necessary information
+	to the graphics card for rendering.
+	*/
+	auto endFrame() -> void;
 
 	/**
 	Returns true when we should close the application as far as the render manager
@@ -102,6 +110,10 @@ public:
 	auto shouldClose() const noexcept -> bool;
 
 private:
+
+	/* ---------------------------------------------------------------------------------------------------------- */
+	/* ---------------------------------------- PRIVATE FUNCTION MEMBERS ---------------------------------------- */
+	/* ---------------------------------------------------------------------------------------------------------- */
 
 	/**
 	Initializes the physical window shown by the operating system
@@ -121,12 +133,6 @@ private:
 	when resizing the window.
 	*/
 	auto recreateSwapChain() -> void;
-
-	/**
-	Internal function that represents one iteration of the loop that will
-	be run within each tick.
-	*/
-	auto loopIteration() noexcept -> void;
 
 	/**
 	Cleans up all the resources that need to be explicitly cleaned up,
@@ -370,6 +376,14 @@ private:
 	auto createRenderPass() -> void;
 
 	/**
+	Creates the descriptor set layout that we will set in
+	the pipeline.
+	
+	@see m_descriptor_set_layout;
+	*/
+	auto createDescriptorSetLayout() -> void;
+
+	/**
 	Creates the graphics pipeline (or pipelines) that will be used to render
 	our scene.
 
@@ -454,6 +468,13 @@ private:
 	auto createIndexBuffer() -> void;
 
 	/**
+	Creates the uniform buffer that will hold the object data to render.
+
+	@see m_uniform_buffer
+	*/
+	auto createUniformBuffer() -> void;
+
+	/**
 	Calculates the required memory types given the input properties.
 
 	@param Flags that indicate the types of memories that we can consider.
@@ -502,19 +523,6 @@ private:
 	@see m_command_buffer_fences
 	*/
 	auto createFences() -> void;
-
-	/**
-	Sets up the beggining of a frame. Setting up the recording of a
-	one time command buffer to submit to the rendering queue.
-	*/
-	auto beginFrame() -> void;
-
-	/**
-	Finishes the rendering stages and submits all the necessary information
-	to the graphics card for rendering.
-	*/
-	auto endFrame() -> void;
-
 
 	/**
 	Handles the event of resizing the window to set up the appropriate
@@ -574,6 +582,8 @@ private:
 
 	VkPipelineLayout m_pipeline_layout{};
 
+	VkDescriptorSetLayout m_descriptor_set_layout{};
+
 	VkPipeline m_pipeline{};
 
 	std::vector<VkFramebuffer> m_swap_chain_framebuffers{};
@@ -585,6 +595,8 @@ private:
 	AllocatedBuffer m_vertex_buffer{};
 
 	AllocatedBuffer m_index_buffer{};
+
+	AllocatedBuffer m_uniform_buffer{};
 
 	std::vector<VkCommandBuffer> m_command_buffers{};
 

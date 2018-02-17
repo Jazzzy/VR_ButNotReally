@@ -15,8 +15,8 @@
 
 
 struct Vertex {
-	glm::vec2 pos;
-	glm::vec3 color;
+	glm::vec2 pos{};
+	glm::vec3 color{};
 
 	auto static getBindingDescription() noexcept ->VkVertexInputBindingDescription {
 
@@ -45,6 +45,19 @@ struct Vertex {
 
 		return attribute_descriptions;
 	}
+};
+
+
+/*
+MVP model.
+
+http://www.opengl-tutorial.org/es/beginners-tutorials/tutorial-3-matrices/
+https://solarianprogrammer.com/2013/05/22/opengl-101-matrices-projection-view-model/
+*/
+struct UniformBufferObject {
+	glm::mat4 model{};
+	glm::mat4 view{};
+	glm::mat4 proj{};
 };
 
 
