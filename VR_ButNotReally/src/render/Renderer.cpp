@@ -17,19 +17,24 @@
 #undef min
 #endif
 
+/*
+Include section without warnings from GSL
+*/
+#pragma warning(push)
+#pragma warning(disable: ALL_CPPCORECHECK_WARNINGS)
+
 #ifdef VMA_USE_ALLOCATOR
 #define VMA_IMPLEMENTATION
-#pragma warning(push)
-#pragma warning(disable: ALL_CPPCORECHECK_WARNINGS)
 #include "vk_mem_alloc.h"
-#pragma warning(pop)
 #endif
 
-#pragma warning(push)
-#pragma warning(disable: ALL_CPPCORECHECK_WARNINGS)
 #define GLM_FORCE_RADIANS
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
+
 #pragma warning(pop)
 
 
@@ -81,6 +86,7 @@ auto Renderer::initVulkan() noexcept(false) -> void {
 	createFramebuffers();
 	createGraphicsCommandPool();
 	createTransferCommandPool();
+	createTextureImage();
 	createVertexBuffer();
 	createIndexBuffer();
 	createUniformBuffer();
@@ -128,6 +134,8 @@ auto Renderer::cleanup() noexcept -> void {
 	vkDeviceWaitIdle(m_device);
 
 	cleanupSwapChain();
+
+	destroyImage(m_texture_image);
 
 	/*
 	This also frees the memory of the descriptor sets it contains
@@ -490,7 +498,7 @@ auto Renderer::createSurface() -> void {
 	if (!createWin32SurfaceKHR || createWin32SurfaceKHR(m_instance, &create_info, nullptr, &m_surface) != VK_SUCCESS) {
 		throw std::runtime_error("We couldn't create a window surface");
 	}
-}
+	}
 #else
 	if (glfwCreateWindowSurface(m_instance, m_window.get(), nullptr, &m_surface) != VK_SUCCESS) {
 		throw std::runtime_error("We couldn't create a Win32 surface");
@@ -1362,6 +1370,161 @@ auto Renderer::createTransferCommandPool() ->  void {
 	std::cout << "\tTransfer Command Pool Created" << std::endl << std::endl;
 }
 
+auto Renderer::createImage(
+	uint width,
+	uint height,
+	VkFormat format,
+	VkImageTiling tiling,
+	VkImageUsageFlags usage,
+	VmaMemoryUsage allocation_usage,
+	VmaAllocationCreateFlags allocation_flags,
+	AllocatedImage& image,
+	VkSharingMode sharing_mode,
+	const std::vector<uint>* queue_family_indices) -> void {
+
+	auto create_info = VkImageCreateInfo{};
+	{
+		create_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+		create_info.imageType = VK_IMAGE_TYPE_2D;
+		create_info.extent.width = gsl::narrow_cast<uint>(width);
+		create_info.extent.height = gsl::narrow_cast<uint>(height);
+		create_info.extent.depth = 1;
+		create_info.mipLevels = 1;
+		create_info.arrayLayers = 1;
+		create_info.format = format;
+		create_info.tiling = tiling;
+		create_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		create_info.usage = usage;
+
+		create_info.sharingMode = sharing_mode;
+		if (sharing_mode == VK_SHARING_MODE_CONCURRENT) {
+			if (queue_family_indices == nullptr || queue_family_indices->size() <= 1) {
+				throw std::runtime_error("We can't create a shared image without more than one families to share between");
+			}
+			create_info.queueFamilyIndexCount = gsl::narrow<uint>(queue_family_indices->size());
+			create_info.pQueueFamilyIndices = queue_family_indices->data();
+		}
+		else {
+			create_info.queueFamilyIndexCount = 0;
+			create_info.pQueueFamilyIndices = nullptr;
+		}
+		create_info.samples = VK_SAMPLE_COUNT_1_BIT;
+		create_info.flags = 0; // default value
+	}
+
+	{
+		auto vma_create_info = VmaAllocationCreateInfo{};
+		vma_create_info.usage = allocation_usage;
+		vma_create_info.flags = allocation_flags;
+
+		if (vmaCreateImage(
+			m_vma_allocator,
+			&create_info,
+			&vma_create_info,
+			&m_texture_image.image,
+			&m_texture_image.allocation,
+			&m_texture_image.allocation_info) != VK_SUCCESS) {
+			throw std::runtime_error("We couldn't create a vulkan image to hold the texture image");
+		}
+	}
+
+}
+
+auto Renderer::destroyImage(AllocatedImage& image) noexcept -> void {
+	vmaDestroyImage(m_vma_allocator, image.image, image.allocation);
+}
+
+auto Renderer::createTextureImage() -> void {
+	auto texture_width = 0;
+	auto texture_height = 0;
+	auto texture_channels = 0;
+
+	auto pixels = stbi_load(
+		"./res/images/test_image.png",
+		&texture_width,
+		&texture_height,
+		&texture_channels,
+		STBI_rgb_alpha);
+
+	if (!pixels) {
+		std::runtime_error("Couldn't load provided texture image");
+	}
+
+	const auto image_size = VkDeviceSize{ gsl::narrow_cast<VkDeviceSize>(texture_width * texture_height * 4) };
+
+
+	auto staging_buffer = AllocatedBuffer{};
+
+	/*
+	We create and fill the staging buffer for the texture
+	*/
+	{
+		createBuffer(
+			image_size,
+			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+			VMA_MEMORY_USAGE_CPU_TO_GPU,
+			VMA_ALLOCATION_CREATE_MAPPED_BIT,
+			staging_buffer,
+			VK_SHARING_MODE_EXCLUSIVE,
+			nullptr);
+
+		memcpy(
+			staging_buffer.allocation_info.pMappedData,
+			pixels,
+			gsl::narrow_cast<size_t>(image_size));
+	}
+
+	stbi_image_free(pixels);
+
+	/*
+	We create the image that will hold the texture
+	*/
+	{
+		auto queue_family_indices = std::vector<uint>{
+			gsl::narrow<uint>(m_queue_family_indices.graphics_family) ,
+			gsl::narrow<uint>(m_queue_family_indices.transfer_family)
+		};
+
+		std::sort(queue_family_indices.begin(), queue_family_indices.end());
+		queue_family_indices.erase(
+			std::unique(queue_family_indices.begin(), queue_family_indices.end()),
+			queue_family_indices.end());
+
+		createImage(
+			texture_width,
+			texture_height,
+			VK_FORMAT_R8G8B8A8_UNORM,
+			VK_IMAGE_TILING_OPTIMAL,
+			VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+			VMA_MEMORY_USAGE_GPU_ONLY,
+			0,
+			m_texture_image,
+			queue_family_indices.size() > 1 ? VK_SHARING_MODE_CONCURRENT : VK_SHARING_MODE_EXCLUSIVE,
+			&queue_family_indices);
+	}
+
+	changeImageLayout(
+		m_texture_image.image,
+		VK_FORMAT_B8G8R8A8_UNORM,
+		VK_IMAGE_LAYOUT_UNDEFINED,
+		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+
+	copyBufferToImage(
+		staging_buffer.buffer,
+		m_texture_image.image,
+		gsl::narrow_cast<uint>(texture_width),
+		gsl::narrow_cast<uint>(texture_height));
+
+	changeImageLayout(
+		m_texture_image.image,
+		VK_FORMAT_B8G8R8A8_UNORM,
+		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+	destroyBuffer(staging_buffer);
+}
+
+
 auto Renderer::createBuffer(
 	VkDeviceSize size,
 	VkBufferUsageFlags usage,
@@ -1428,7 +1591,7 @@ auto Renderer::createBuffer(
 
 	vkBindBufferMemory(m_device, (allocated_buffer.buffer), (allocated_buffer.memory), 0);
 #endif
-	}
+}
 
 auto Renderer::destroyBuffer(
 	AllocatedBuffer& allocated_buffer
@@ -1575,7 +1738,7 @@ auto Renderer::createIndexBuffer() -> void {
 	}
 
 	std::cout << "\tIndex Buffer Created" << std::endl << std::endl;
-	}
+}
 
 auto Renderer::createUniformBuffer() -> void {
 
@@ -1688,38 +1851,18 @@ auto Renderer::findMemoryType(uint type_filter, VkMemoryPropertyFlags properties
 }
 
 auto Renderer::copyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size) noexcept -> void {
-	auto allocate_info = VkCommandBufferAllocateInfo{};
-	allocate_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-	allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-	allocate_info.commandPool = m_transfer_command_pool;
-	allocate_info.commandBufferCount = 1;
 
-	auto command_buffer = VkCommandBuffer{};
-	vkAllocateCommandBuffers(m_device, &allocate_info, &command_buffer);
 
-	auto begin_info = VkCommandBufferBeginInfo{};
-	begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-	begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
-	vkBeginCommandBuffer(command_buffer, &begin_info);
+	auto command_buffer = beginSingleTimeCommands(CommandType::transfer);
 
 	auto copy_region = VkBufferCopy{};
 	copy_region.srcOffset = 0;
 	copy_region.dstOffset = 0;
 	copy_region.size = size;
-	vkCmdCopyBuffer(command_buffer, src, dst, 1, &copy_region);
+	vkCmdCopyBuffer(command_buffer.buffer, src, dst, 1, &copy_region);
 
-	vkEndCommandBuffer(command_buffer);
+	endSingleTimeCommands(command_buffer);
 
-	auto submit_info = VkSubmitInfo{};
-	submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-	submit_info.commandBufferCount = 1;
-	submit_info.pCommandBuffers = &command_buffer;
-
-	vkQueueSubmit(m_transfer_queue, 1, &submit_info, VK_NULL_HANDLE);
-	vkQueueWaitIdle(m_transfer_queue);
-
-	vkFreeCommandBuffers(m_device, m_transfer_command_pool, 1, &command_buffer);
 }
 
 auto Renderer::createCommandBuffers() ->  void {
@@ -1861,9 +2004,9 @@ auto Renderer::createFences() -> void {
 
 		if (vkCreateFence(m_device, &create_info, nullptr, &m_command_buffer_fences[i]) != VK_SUCCESS) {
 			throw std::runtime_error("We couldn't create a fence to sinchronize the command buffers");
-}
+		}
 
-}
+	}
 
 	std::cout << "\tFences Created" << std::endl << std::endl;
 
@@ -2064,5 +2207,164 @@ auto Renderer::onWindowsResized(GLFWwindow * window, int width, int height) -> v
 	std::cout << " - Window resized to (" << width << ", " << height << ")" << std::endl;
 }
 
+auto Renderer::beginSingleTimeCommands(CommandType command_type)->WrappedCommandBuffer {
+	auto allocate_info = VkCommandBufferAllocateInfo{};
+	allocate_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 
+	switch (command_type) {
+	case CommandType::graphics: {
+		allocate_info.commandPool = m_graphics_command_pool;
+		break;
+	}
+	case CommandType::transfer: {
+		allocate_info.commandPool = m_transfer_command_pool;
+		break;
+	}
+	}
+
+	allocate_info.commandBufferCount = 1;
+
+	auto command_buffer = WrappedCommandBuffer{};
+	command_buffer.type = command_type;
+	vkAllocateCommandBuffers(m_device, &allocate_info, &command_buffer.buffer);
+
+	auto begin_info = VkCommandBufferBeginInfo{};
+	begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+	vkBeginCommandBuffer(command_buffer.buffer, &begin_info);
+	command_buffer.recording = true;
+
+	return command_buffer;
+}
+
+auto Renderer::endSingleTimeCommands(WrappedCommandBuffer& command_buffer)->void {
+
+	vkEndCommandBuffer(command_buffer.buffer);
+	command_buffer.recording = false;
+
+	auto submit_info = VkSubmitInfo{};
+	submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submit_info.commandBufferCount = 1;
+	submit_info.pCommandBuffers = &command_buffer.buffer;
+
+	auto command_pool = VkCommandPool{};
+	auto queue = VkQueue{};
+
+	switch (command_buffer.type) {
+	case CommandType::graphics: {
+		command_pool = m_graphics_command_pool;
+		queue = m_graphics_queue;
+		break;
+	}
+	case CommandType::transfer: {
+		command_pool = m_transfer_command_pool;
+		queue = m_transfer_queue;
+		break;
+	}
+	}
+
+	vkQueueSubmit(queue, 1, &submit_info, VK_NULL_HANDLE);
+	vkQueueWaitIdle(queue);
+
+	vkFreeCommandBuffers(m_device, command_pool, 1, &command_buffer.buffer);
+}
+
+auto Renderer::changeImageLayout(
+	VkImage& image,
+	VkFormat format,
+	VkImageLayout old_layout,
+	VkImageLayout new_layout)->void {
+
+	auto command_buffer = beginSingleTimeCommands();
+	{
+
+		auto barrier = VkImageMemoryBarrier{};
+		auto source_stage = VkPipelineStageFlags{};
+		auto destination_stage = VkPipelineStageFlags{};
+		{
+			barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+			barrier.oldLayout = old_layout;
+			barrier.newLayout = new_layout;
+			barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+			barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+			barrier.image = image;
+			barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			barrier.subresourceRange.baseMipLevel = 0;
+			barrier.subresourceRange.levelCount = 1;
+			barrier.subresourceRange.baseArrayLayer = 0;
+			barrier.subresourceRange.layerCount = 1;
+
+
+			if (old_layout == VK_IMAGE_LAYOUT_UNDEFINED && new_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+				barrier.srcAccessMask = 0;
+				barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+
+				source_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+				destination_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+			}
+			else if (old_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && new_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+				barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+				barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+				source_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+				destination_stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+			}
+			else {
+				throw std::invalid_argument("Unsupported image layout transition");
+			}
+
+
+
+		}
+
+		vkCmdPipelineBarrier(
+			command_buffer.buffer,
+			source_stage, destination_stage,
+			0,
+			0, nullptr,
+			0, nullptr,
+			1, &barrier
+		);
+
+	}
+	endSingleTimeCommands(command_buffer);
+}
+
+auto Renderer::copyBufferToImage(
+	VkBuffer buffer,
+	VkImage image,
+	uint width,
+	uint heigth) -> void {
+
+	auto command_buffer = beginSingleTimeCommands();
+	{
+
+		auto region = VkBufferImageCopy{};
+		{
+			region.bufferOffset = 0;
+			region.bufferRowLength = 0;
+			region.bufferImageHeight = 0;
+
+			region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			region.imageSubresource.mipLevel = 0;
+			region.imageSubresource.baseArrayLayer = 0;
+			region.imageSubresource.layerCount = 1;
+
+			region.imageOffset = { 0, 0, 0 };
+			region.imageExtent = { width, heigth, 1 };
+		}
+
+		vkCmdCopyBufferToImage(
+			command_buffer.buffer,
+			buffer,
+			image,
+			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			1,
+			&region);
+
+	}
+	endSingleTimeCommands(command_buffer);
+}
 

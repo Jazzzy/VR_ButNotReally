@@ -21,6 +21,9 @@
 #undef min
 #endif
 
+#include "../utils/Utils.h"
+#include "./RenderUtils.h"
+
 /*
 We define this in case we want to use VulkanMemoryAllocator's
 allocators.
@@ -32,6 +35,7 @@ buffers and images without VMA_USE_ALLOCATOR could not be fully supported.
 */
 #define VMA_USE_ALLOCATOR
 
+
 #ifdef VMA_USE_ALLOCATOR
 #pragma warning(push)
 #include <CppCoreCheck/Warnings.h>
@@ -39,9 +43,20 @@ buffers and images without VMA_USE_ALLOCATOR could not be fully supported.
 #include "vk_mem_alloc.h"
 #pragma warning(pop)
 
-
+/**
+Wrapps a Vulkan Buffer with allocation information tied to it
+*/
 struct AllocatedBuffer {
 	VkBuffer buffer{};
+	VmaAllocation allocation{};
+	VmaAllocationInfo allocation_info{};
+};
+
+/**
+Wrapps a Vulkan Image with allocation information tied to it
+*/
+struct AllocatedImage {
+	VkImage image{};
 	VmaAllocation allocation{};
 	VmaAllocationInfo allocation_info{};
 };
@@ -49,16 +64,26 @@ struct AllocatedBuffer {
 #else
 
 #pragma message ( "This program is meant to currently use VMA allocation" )
+#error Current code needs to use VMA allocation
 
 struct AllocatedBuffer {
 	VkBuffer buffer{};
 	VkDeviceMemory memory{};
 };
 
+struct AllocatedImage {
+	VkImage image{};
+	VkDeviceMemory memory{};
+};
+
 #endif
 
-#include "../utils/Utils.h"
-#include "./RenderUtils.h"
+struct WrappedCommandBuffer {
+	VkCommandBuffer buffer{};
+	CommandType type{};
+	bool recording{ false };
+};
+
 
 /**
 Used for managing all the rendering logic of the application.
@@ -435,15 +460,53 @@ private:
 	auto createTransferCommandPool() ->  void;
 
 	/**
+	Helper function that creates a vulkan image in a general way
+
+	@param Width of the image
+	@param Height of the image
+	@param Vulkan Format of the image
+	@param Tiling Options for the image
+	@param Usage flags that the image will need
+	@param Usage type for allocation
+	@param Flags necessary for allocation
+	@param The image to be populated
+	*/
+	auto createImage(
+		uint width,
+		uint height,
+		VkFormat format,
+		VkImageTiling tiling,
+		VkImageUsageFlags flags,
+		VmaMemoryUsage allocation_usage,
+		VmaAllocationCreateFlags allocation_flags,
+		AllocatedImage& image,
+		VkSharingMode sharing_mode,
+		const std::vector<uint>* queue_family_indices) -> void;
+
+	/**
+	Destroys the image provided and frees its memory
+
+	@param The image to destroy
+	*/
+	auto destroyImage(AllocatedImage& image) noexcept -> void;
+
+	/**
+	Creates a texture image with the data loaded from a file
+
+	@see m_texture_image
+	*/
+	auto createTextureImage() -> void;
+
+	/**
 	Helper function that creates a vulkan buffer in a general way.
 
 	@param The size of the memory to be allocated
 	@param The usage flags necessary for the memory we are allocating
-	@param The required properties for the memory we are allocating
+	@param The allocation usage that the buffer will have
+	@param The flags for the allocator to use during creating of the buffer.
+	@param The handle to the buffer to create
 	@param The sharing mode of the buffer (VK_SHARING_MODE_(EXCLUSIVE/CONCURRENT))
 	@param The family indices of the queues this buffer will be shared between if CONCURRENT, nullptr otherwise
-	@param The buffer handle we will populate
-	@param The device memory handle we will populate
 	*/
 	auto createBuffer(
 		VkDeviceSize size,
@@ -458,6 +521,11 @@ private:
 		VkSharingMode sharing_mode,
 		const std::vector<uint>* queue_family_indices) -> void;
 
+	/**
+	Destroys the buffer provided and frees its memory
+
+	@param The Buffer to destroy
+	*/
 	auto destroyBuffer(
 		AllocatedBuffer& allocated_buffer
 	) noexcept -> void;
@@ -492,7 +560,7 @@ private:
 	auto createDescriptorPool() -> void;
 
 	/**
-	Creates the descriptor set that will hold the descriptors 
+	Creates the descriptor set that will hold the descriptors
 	used during rendering.
 
 	@see m_descriptor_set
@@ -559,6 +627,51 @@ private:
 	*/
 	auto static onWindowsResized(GLFWwindow * window, int width, int heigth) -> void;
 
+	/**
+	Creates a single use command buffer and starts recording to it
+
+	@param the type of commands that will be used (graphics also allows transfer)
+	@return The command buffer we are recording to
+	*/
+	auto beginSingleTimeCommands(CommandType command_type = CommandType::graphics)->WrappedCommandBuffer;
+
+	/**
+	End recording to a particulaar command buffer and submits it to the queue
+
+	@param The command buffer to submit to the queue
+	*/
+	auto endSingleTimeCommands(
+		WrappedCommandBuffer& command_buffer)->void;
+
+	/**
+	Helper function that changes the image layout to a new one
+
+	@param The image to change the layout to
+	@param The format of the image
+	@param The old layout of the image
+	@param The new layout for the image
+	*/
+	auto changeImageLayout(
+		VkImage& image,
+		VkFormat format,
+		VkImageLayout old_layout,
+		VkImageLayout new_layout)->void;
+
+	/**
+	Helper function that copies a buffer with image data into
+	a vulkan image structure.
+
+	@param The buffer to read the data from
+	@param The image to write de data into
+	@param Width of the image
+	@param Height of the image
+	*/
+	auto copyBufferToImage(
+		VkBuffer buffer,
+		VkImage image,
+		uint width,
+		uint heigth) -> void;
+
 	/* ---------------------------------------------------------------------------------------------- */
 	/* ---------------------------------------- DATA MEMBERS ---------------------------------------- */
 	/* ---------------------------------------------------------------------------------------------- */
@@ -622,6 +735,8 @@ private:
 	AllocatedBuffer m_index_buffer{};
 
 	AllocatedBuffer m_uniform_buffer{};
+
+	AllocatedImage m_texture_image{};
 
 	VkDescriptorPool m_descriptor_pool{};
 

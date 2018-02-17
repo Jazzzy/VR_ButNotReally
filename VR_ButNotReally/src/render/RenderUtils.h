@@ -13,6 +13,11 @@ struct GLFWWindowDestroyer {
 	auto operator()(GLFWwindow* ptr) noexcept -> void;
 };
  
+enum class CommandType {
+	transfer,
+	graphics
+};
+
 /**
 Stores the queue indices for the graphics and presentation
 queues in a vulkan physical device.
