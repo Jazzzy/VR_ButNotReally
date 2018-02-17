@@ -90,6 +90,15 @@ public:
 	/* --------------------------------------------------------------------------------------------------------- */
 
 	/**
+	Updates the uniform buffer for the object being rendered
+
+	@TODO: Reformat this function out of the renderer.
+
+	@see m_uniform_buffer
+	*/
+	auto updateUniformBuffer() ->void;
+
+	/**
 	Sets up the beggining of a frame. Setting up the recording of a
 	one time command buffer to submit to the rendering queue.
 	*/
@@ -378,7 +387,7 @@ private:
 	/**
 	Creates the descriptor set layout that we will set in
 	the pipeline.
-	
+
 	@see m_descriptor_set_layout;
 	*/
 	auto createDescriptorSetLayout() -> void;
@@ -473,6 +482,22 @@ private:
 	@see m_uniform_buffer
 	*/
 	auto createUniformBuffer() -> void;
+
+	/**
+	Creates the descriptor pool that will hold the descriptors sets that will
+	be used during rendering.
+
+	@see m_descriptor_pool
+	*/
+	auto createDescriptorPool() -> void;
+
+	/**
+	Creates the descriptor set that will hold the descriptors 
+	used during rendering.
+
+	@see m_descriptor_set
+	*/
+	auto createDescriptorSet() -> void;
 
 	/**
 	Calculates the required memory types given the input properties.
@@ -597,6 +622,10 @@ private:
 	AllocatedBuffer m_index_buffer{};
 
 	AllocatedBuffer m_uniform_buffer{};
+
+	VkDescriptorPool m_descriptor_pool{};
+
+	VkDescriptorSet m_descriptor_set{};
 
 	std::vector<VkCommandBuffer> m_command_buffers{};
 

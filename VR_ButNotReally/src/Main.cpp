@@ -16,6 +16,7 @@ int main() {
 			Renderer renderer;
 			while (!renderer.shouldClose()) {
 				glfwPollEvents();
+				renderer.updateUniformBuffer();
 				renderer.beginFrame();
 				renderer.endFrame();
 			}

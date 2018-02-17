@@ -1,11 +1,14 @@
-#include <limits>
 #include "Renderer.h"
 #include "../Configuration.h"
+#include <vulkan/vk_platform.h>
+#include "RenderData.h"
+#include <limits>
 #include <map>
 #include <set>
 #include <algorithm>
-#include <vulkan/vk_platform.h>
-#include "RenderData.h"
+#include <chrono>
+#include <CppCoreCheck/Warnings.h>
+
 
 #ifdef max
 #undef max
@@ -17,11 +20,17 @@
 #ifdef VMA_USE_ALLOCATOR
 #define VMA_IMPLEMENTATION
 #pragma warning(push)
-#include <CppCoreCheck/Warnings.h>
 #pragma warning(disable: ALL_CPPCORECHECK_WARNINGS)
 #include "vk_mem_alloc.h"
 #pragma warning(pop)
 #endif
+
+#pragma warning(push)
+#pragma warning(disable: ALL_CPPCORECHECK_WARNINGS)
+#define GLM_FORCE_RADIANS
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#pragma warning(pop)
 
 
 /*
@@ -41,10 +50,6 @@ Renderer::~Renderer() {
 
 auto Renderer::shouldClose() const noexcept -> bool {
 	return glfwWindowShouldClose(m_window.get());
-}
-
-auto Renderer::update() noexcept -> void {
-	loopIteration();
 }
 
 auto Renderer::initWindow() noexcept -> void {
@@ -79,6 +84,8 @@ auto Renderer::initVulkan() noexcept(false) -> void {
 	createVertexBuffer();
 	createIndexBuffer();
 	createUniformBuffer();
+	createDescriptorPool();
+	createDescriptorSet();
 	createCommandBuffers();
 	recordCommandBuffers();
 	createSemaphores();
@@ -112,12 +119,20 @@ auto Renderer::recreateSwapChain() -> void {
 	createFramebuffers();
 	createCommandBuffers();
 	recordCommandBuffers();
+
+	m_current_swapchain_buffer = 0;
+	m_current_command_buffer = 0;
 }
 
 auto Renderer::cleanup() noexcept -> void {
 	vkDeviceWaitIdle(m_device);
 
 	cleanupSwapChain();
+
+	/*
+	This also frees the memory of the descriptor sets it contains
+	*/
+	vkDestroyDescriptorPool(m_device, m_descriptor_pool, nullptr);
 
 	vkDestroyDescriptorSetLayout(m_device, m_descriptor_set_layout, nullptr);
 	destroyBuffer(m_uniform_buffer);
@@ -184,6 +199,8 @@ auto Renderer::cleanupSwapChain() noexcept -> void {
 
 auto Renderer::createInstance() noexcept(false) -> VkInstance {
 
+	std::cout << "Creating Vulkan Instance" << std::endl;
+
 	if (config::validation_layers_enabled && !checkValidationLayerSupport()) {
 		throw std::runtime_error("Validation layers were requested but were not available.");
 	}
@@ -246,6 +263,7 @@ auto Renderer::createInstance() noexcept(false) -> VkInstance {
 		throw std::runtime_error("We could not create the vulkan instance");
 	}
 
+	std::cout << "\tVulkan Instance Created" << std::endl << std::endl;
 
 	return instance;
 }
@@ -456,6 +474,9 @@ auto Renderer::destroyDebugReportCallbackEXT(
 
 auto Renderer::createSurface() -> void {
 
+	std::cout << "Creating Surface" << std::endl;
+
+
 #ifdef _WIN32
 	auto create_info = VkWin32SurfaceCreateInfoKHR{};
 	create_info.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
@@ -469,12 +490,15 @@ auto Renderer::createSurface() -> void {
 	if (!createWin32SurfaceKHR || createWin32SurfaceKHR(m_instance, &create_info, nullptr, &m_surface) != VK_SUCCESS) {
 		throw std::runtime_error("We couldn't create a window surface");
 	}
-	}
+}
 #else
 	if (glfwCreateWindowSurface(m_instance, m_window.get(), nullptr, &m_surface) != VK_SUCCESS) {
 		throw std::runtime_error("We couldn't create a Win32 surface");
 	}
 #endif
+
+	std::cout << "\tSurface Created" << std::endl << std::endl;
+
 
 }
 
@@ -616,6 +640,9 @@ auto Renderer::findQueueFamilies(const VkPhysicalDevice& physical_device, PrintO
 
 auto Renderer::createLogicalDevice() -> void {
 
+	std::cout << "Creating Logical Device" << std::endl;
+
+
 	m_queue_family_indices = findQueueFamilies(m_physical_device, PrintOptions::none);
 
 	auto queue_create_infos = std::vector<VkDeviceQueueCreateInfo>{};
@@ -663,15 +690,22 @@ auto Renderer::createLogicalDevice() -> void {
 	vkGetDeviceQueue(m_device, m_queue_family_indices.graphics_family, 0, &m_graphics_queue);
 	vkGetDeviceQueue(m_device, m_queue_family_indices.present_family, 0, &m_present_queue);
 	vkGetDeviceQueue(m_device, m_queue_family_indices.transfer_family, 0, &m_transfer_queue);
+
+	std::cout << "\tLogical Device Created" << std::endl << std::endl;
+
 }
 
 auto Renderer::createAllocator() noexcept ->void {
 #ifdef VMA_USE_ALLOCATOR
+	std::cout << "Creating Allocator" << std::endl;
+
 	auto create_info = VmaAllocatorCreateInfo{};
 	create_info.physicalDevice = m_physical_device;
 	create_info.device = m_device;
 
 	vmaCreateAllocator(&create_info, &m_vma_allocator);
+
+	std::cout << "\tAllocator Created" << std::endl << std::endl;
 #endif
 }
 
@@ -797,6 +831,9 @@ auto Renderer::pickSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities)  con
 
 auto Renderer::createSwapChain() -> void {
 
+	std::cout << "Creating Swap Chain" << std::endl;
+
+
 	auto swap_chain_support = querySwapChainSupport(m_physical_device);
 
 	const auto surface_format = pickSurfaceChainFormat(swap_chain_support.formats);
@@ -887,6 +924,7 @@ auto Renderer::createSwapChain() -> void {
 	m_swap_chain_images.resize(image_count);
 	vkGetSwapchainImagesKHR(m_device, m_swap_chain, &image_count, m_swap_chain_images.data());
 
+
 	std::cout << "Number of images acquiesced in Swap Chain: " << image_count << std::endl << std::endl;
 
 	/*
@@ -894,9 +932,15 @@ auto Renderer::createSwapChain() -> void {
 	*/
 	m_swap_chain_image_format = surface_format.format;
 	m_swap_chain_extent = extent;
+
+	std::cout << "\tSwap Chain Created" << std::endl << std::endl;
+
 }
 
 auto Renderer::createImageViews() -> void {
+
+	std::cout << "Creating Image Views" << std::endl;
+
 
 	m_swap_chain_image_views.resize(m_swap_chain_images.size());
 
@@ -921,6 +965,8 @@ auto Renderer::createImageViews() -> void {
 			throw std::runtime_error("Couldn't create an image view for an image in the swap chain");
 		}
 	}
+
+	std::cout << "\tImage Views Created" << std::endl << std::endl;
 }
 
 auto Renderer::createRenderPass() -> void {
@@ -979,6 +1025,9 @@ auto Renderer::createRenderPass() -> void {
 
 
 auto Renderer::createDescriptorSetLayout() -> void {
+
+	std::cout << "Creating Descriptor Set Layout" << std::endl;
+
 	auto layout_binding = VkDescriptorSetLayoutBinding{};
 	layout_binding.binding = 0;
 	layout_binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -994,6 +1043,9 @@ auto Renderer::createDescriptorSetLayout() -> void {
 	if (vkCreateDescriptorSetLayout(m_device, &create_info, nullptr, &m_descriptor_set_layout) != VK_SUCCESS) {
 		throw std::runtime_error("We couldn't create the descriptor set layout");
 	}
+
+	std::cout << "\tDescriptor Set Layout Created" << std::endl << std::endl;
+
 }
 
 auto Renderer::createGraphicsPipeline() -> void {
@@ -1079,7 +1131,7 @@ auto Renderer::createGraphicsPipeline() -> void {
 	rasterizer_create_info.polygonMode = VK_POLYGON_MODE_FILL;
 	rasterizer_create_info.lineWidth = 1.0f;
 	rasterizer_create_info.cullMode = VK_CULL_MODE_BACK_BIT;
-	rasterizer_create_info.frontFace = VK_FRONT_FACE_CLOCKWISE;
+	rasterizer_create_info.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 	rasterizer_create_info.depthBiasEnable = VK_FALSE;
 	rasterizer_create_info.depthBiasConstantFactor = 0.0f;
 	rasterizer_create_info.depthBiasSlopeFactor = 0.0f;
@@ -1227,13 +1279,12 @@ auto Renderer::createShaderModule(const std::vector<char>& code) const -> VkShad
 }
 
 auto Renderer::createFramebuffers() ->  void {
-
 	std::cout << "Creating Framebuffers " << std::endl;
-
 
 	m_swap_chain_framebuffers.resize(m_swap_chain_image_views.size());
 
 	for (size_t i = 0; i < m_swap_chain_image_views.size(); ++i) {
+
 		VkImageView attachments[] = { m_swap_chain_image_views[i] };
 
 		auto frame_buffer_create_info = VkFramebufferCreateInfo{};
@@ -1377,7 +1428,7 @@ auto Renderer::createBuffer(
 
 	vkBindBufferMemory(m_device, (allocated_buffer.buffer), (allocated_buffer.memory), 0);
 #endif
-}
+	}
 
 auto Renderer::destroyBuffer(
 	AllocatedBuffer& allocated_buffer
@@ -1393,6 +1444,9 @@ auto Renderer::destroyBuffer(
 }
 
 auto Renderer::createVertexBuffer() -> void {
+
+	std::cout << "Creating Vertex Buffer" << std::endl;
+
 
 	[[gsl::suppress(type.4)]]{
 
@@ -1453,9 +1507,13 @@ auto Renderer::createVertexBuffer() -> void {
 
 		destroyBuffer(staging_buffer);
 	}
+	std::cout << "\tVertex Buffer Created" << std::endl << std::endl;
+
 }
 
 auto Renderer::createIndexBuffer() -> void {
+
+	std::cout << "Creating Index Buffer" << std::endl;
 
 	[[gsl::suppress(type.4)]]{
 		/*
@@ -1515,11 +1573,16 @@ auto Renderer::createIndexBuffer() -> void {
 
 		destroyBuffer(staging_buffer);
 	}
-}
+
+	std::cout << "\tIndex Buffer Created" << std::endl << std::endl;
+	}
 
 auto Renderer::createUniformBuffer() -> void {
 
-	auto buffer_size = VkDeviceSize{ gsl::narrow_cast<size_t>(sizeof(UniformBufferObject)) };
+	std::cout << "Creating Uniform Buffer" << std::endl;
+
+	[[gsl::suppress(type.4)]]{
+	const auto buffer_size = VkDeviceSize{ gsl::narrow_cast<size_t>(sizeof(UniformBufferObject)) };
 
 	createBuffer(
 		buffer_size,
@@ -1533,7 +1596,78 @@ auto Renderer::createUniformBuffer() -> void {
 		m_uniform_buffer,
 		VK_SHARING_MODE_EXCLUSIVE,
 		nullptr);
+	}
 
+	std::cout << "\tUniform Buffer Created" << std::endl << std::endl;
+}
+
+auto Renderer::createDescriptorPool() -> void {
+
+	std::cout << "Creating Descriptor Pool" << std::endl;
+
+	auto pool_size = VkDescriptorPoolSize{};
+	/*
+	@NOTE: Change this to DYNAMIC if necessary
+	*/
+	pool_size.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	pool_size.descriptorCount = 1;
+
+	auto create_info = VkDescriptorPoolCreateInfo{};
+	create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	create_info.poolSizeCount = 1;
+	create_info.pPoolSizes = &pool_size;
+	create_info.maxSets = 1;
+	/*
+	@NOTE: Use the VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT if we
+	want to free individual descriptor sets
+	*/
+	create_info.flags = 0;
+
+	if (vkCreateDescriptorPool(m_device, &create_info, nullptr, &m_descriptor_pool) != VK_SUCCESS) {
+		throw std::runtime_error("We couldn't create the descriptor pool");
+	}
+
+	std::cout << "\tDescriptor Pool Created" << std::endl << std::endl;
+}
+
+auto Renderer::createDescriptorSet() -> void {
+
+	std::cout << "Creating Descriptor Set" << std::endl;
+
+	VkDescriptorSetLayout layouts[] = { m_descriptor_set_layout };
+	auto alloc_info = VkDescriptorSetAllocateInfo{};
+	alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	alloc_info.descriptorPool = m_descriptor_pool;
+	alloc_info.descriptorSetCount = 1;
+	{
+		[[gsl::suppress(bounds.3)]]{
+		alloc_info.pSetLayouts = layouts;
+		}
+	}
+
+	if (vkAllocateDescriptorSets(m_device, &alloc_info, &m_descriptor_set) != VK_SUCCESS) {
+		throw std::runtime_error("We couldn't allocate the descriptor set");
+	}
+
+	auto buffer_info = VkDescriptorBufferInfo{};
+	buffer_info.buffer = m_uniform_buffer.buffer;
+	buffer_info.offset = 0;
+	buffer_info.range = sizeof(UniformBufferObject);
+
+	auto descriptor_write = VkWriteDescriptorSet{};
+	descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	descriptor_write.dstSet = m_descriptor_set;
+	descriptor_write.dstBinding = 0;
+	descriptor_write.dstArrayElement = 0;
+	descriptor_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	descriptor_write.descriptorCount = 1;
+	descriptor_write.pBufferInfo = &buffer_info;
+	descriptor_write.pImageInfo = nullptr; // default value
+	descriptor_write.pTexelBufferView = nullptr; // default value
+
+	vkUpdateDescriptorSets(m_device, 1, &descriptor_write, 0, nullptr);
+
+	std::cout << "\tDescriptor Set Created" << std::endl << std::endl;
 }
 
 auto Renderer::findMemoryType(uint type_filter, VkMemoryPropertyFlags properties)->uint {
@@ -1660,6 +1794,16 @@ auto Renderer::recordCommandBuffers() -> void {
 
 			vkCmdBindIndexBuffer(m_command_buffers[i], m_index_buffer.buffer, 0, VK_INDEX_TYPE_UINT16);
 
+			vkCmdBindDescriptorSets(
+				m_command_buffers[i],
+				VK_PIPELINE_BIND_POINT_GRAPHICS,
+				m_pipeline_layout,
+				0,
+				1,
+				&m_descriptor_set,
+				0,
+				nullptr);
+
 			vkCmdDrawIndexed(m_command_buffers[i], gsl::narrow<uint>(indices.size()), 1, 0, 0, 0);
 		}
 
@@ -1717,15 +1861,52 @@ auto Renderer::createFences() -> void {
 
 		if (vkCreateFence(m_device, &create_info, nullptr, &m_command_buffer_fences[i]) != VK_SUCCESS) {
 			throw std::runtime_error("We couldn't create a fence to sinchronize the command buffers");
-		}
+}
 
-	}
+}
 
 	std::cout << "\tFences Created" << std::endl << std::endl;
 
 }
 
+auto Renderer::updateUniformBuffer() ->void {
+
+	static auto start_time = std::chrono::high_resolution_clock::now();
+
+	const auto current_time = std::chrono::high_resolution_clock::now();
+
+	auto time = std::chrono::duration
+		<float, std::chrono::seconds::period>
+		(current_time - start_time).count();
+
+	auto ubo = UniformBufferObject{};
+
+	ubo.model = glm::rotate(glm::mat4(1.0f), time* glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+	ubo.view = glm::lookAt(
+		glm::vec3(2.0f, 2.0f, 2.0f),
+		glm::vec3(0.0f, 0.0f, 0.0f),
+		glm::vec3(0.0f, 0.0f, 1.0f));
+	ubo.proj = glm::perspective(
+		glm::radians(45.0f),
+		m_swap_chain_extent.width / gsl::narrow_cast<float>(m_swap_chain_extent.height),
+		0.1f,
+		10.0f);
+	ubo.proj[1][1] = -1; // We compensate for the inverted Y axis in GLM (meant for OpenGL)
+
+#ifdef VMA_USE_ALLOCATOR
+	memcpy(m_uniform_buffer.allocation_info.pMappedData, &ubo, sizeof(ubo));
+#else
+	void *data = nullptr;
+	vkMapMemory(m_device, m_uniform_buffer.allocation_info.deviceMemory, 0, sizeof(ubo), 0, &data);
+	memcpy(data, &ubo, sizeof(ubo));
+	vkUnmapMemory(m_device, m_uniform_buffer.allocation_info.deviceMemory);
+#endif
+
+}
+
 auto Renderer::beginFrame() -> void {
+
+	vkQueueWaitIdle(m_graphics_queue);
 
 	/*
 	We wait for the fence that indicates that we can use the current
@@ -1827,7 +2008,6 @@ auto Renderer::endFrame() -> void {
 		submit_info.pCommandBuffers = &m_command_buffers[m_current_command_buffer];
 		submit_info.signalSemaphoreCount = 1;
 		submit_info.pSignalSemaphores = signal_semaphores;
-
 
 		if (vkQueueSubmit(m_graphics_queue, 1, &submit_info, m_command_buffer_fences[m_current_command_buffer]) != VK_SUCCESS) {
 			throw std::runtime_error("We couldn't submit our command buffer");
