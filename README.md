@@ -42,31 +42,13 @@ for modern C++ by its creator Bjarne StroustrupHerb and Herb Sutter published in
 their books and explained in talks such as the ones given in the
 [cppcon](https://cppcon.org/).
 
-The things that have been implemented so far are the following:
-
--   Created a window and a vulkan instance with custom layers and extensions in
-    a safe way.
+Some interesting things that have been implemented so far are the following:
 
 -   Configured the Debug Report Extension to get runtime debug information about
     the application.
 
--   Implemented visualization, processing and selection of physical devices
-    available on the system that support vulkan.
-
--   Implemented visualization, processing, selection and creatiton of necesssary
-    queues and logical devices.
-
 -   Implemented full custom swap chain configuration and selection. Targeting a
     triple buffer architecture.
-
--   Implemented loading of simple shaders and creation of shader modules for
-    said shaders.
-
--   Implemented render passes and pipeline creation.
-
--   Implemented Framebuffers, Command Buffers (recorded) and a Command Pool.
-
--   Implemented semaphores for rendering synchronization.
 
 -   Implemented drawing and presentation functionality that allows for CPU
     computing while the previous frame is rendering.
