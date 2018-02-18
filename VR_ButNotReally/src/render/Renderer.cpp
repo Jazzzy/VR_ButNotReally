@@ -1028,28 +1028,36 @@ auto Renderer::createRenderPass() -> void {
 		}
 	}
 	else {
-		VkAttachmentDescription attachment_descriptions[2] = { { 0 } };
+		auto attachment_descriptions = std::array<VkAttachmentDescription, 2>{};
 
+
+		/*
+		We set up the attachments for the render pass
+		
+		https://github.com/SaschaWillems/Vulkan/blob/master/examples/multisampling/multisampling.cpp @ 247
+		*/
+
+		/*
+		Multisampled render target
+		*/
 		attachment_descriptions[0].format = m_swap_chain_image_format;
 		attachment_descriptions[0].samples = getSampleBits(config.multisampling_samples);
 		attachment_descriptions[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-
-		attachment_descriptions[0].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-
+		attachment_descriptions[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 		attachment_descriptions[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 		attachment_descriptions[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-
 		attachment_descriptions[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 		attachment_descriptions[0].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
+		/*
+		FrameBuffer we resolve the multisampled image to
+		*/
 		attachment_descriptions[1].format = m_swap_chain_image_format;
 		attachment_descriptions[1].samples = VK_SAMPLE_COUNT_1_BIT;
-
 		attachment_descriptions[1].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 		attachment_descriptions[1].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 		attachment_descriptions[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 		attachment_descriptions[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-
 		attachment_descriptions[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 		attachment_descriptions[1].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
@@ -1074,8 +1082,8 @@ auto Renderer::createRenderPass() -> void {
 
 		auto render_pass_create_info = VkRenderPassCreateInfo{};
 		render_pass_create_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-		render_pass_create_info.attachmentCount = gsl::narrow_cast<uint>(2);
-		render_pass_create_info.pAttachments = attachment_descriptions;
+		render_pass_create_info.attachmentCount = gsl::narrow_cast<uint>(attachment_descriptions.size());
+		render_pass_create_info.pAttachments = attachment_descriptions.data();
 		render_pass_create_info.subpassCount = 1;
 		render_pass_create_info.pSubpasses = &subpass_description;
 		render_pass_create_info.dependencyCount = 1;
@@ -1986,14 +1994,44 @@ auto Renderer::createDescriptorSet() -> void {
 	std::cout << "\tDescriptor Set Created" << std::endl << std::endl;
 }
 
-auto Renderer::findMemoryType(uint type_filter, VkMemoryPropertyFlags properties)->uint {
+auto Renderer::findMemoryType(uint type_bits, VkMemoryPropertyFlags properties, VkBool32 *memTypeFound = nullptr)->uint {
 
 	auto memory_properties = VkPhysicalDeviceMemoryProperties{};
 	vkGetPhysicalDeviceMemoryProperties(m_physical_device, &memory_properties);
 
+
+	for (uint32_t i = 0; i < memory_properties.memoryTypeCount; i++)
+	{
+		if ((type_bits & 1) == 1)
+		{
+			if ((memory_properties.memoryTypes[i].propertyFlags & properties) == properties)
+			{
+				if (memTypeFound)
+				{
+					*memTypeFound = true;
+				}
+				return i;
+			}
+		}
+		type_bits >>= 1;
+	}
+
+	if (memTypeFound)
+	{
+		*memTypeFound = false;
+		return 0;
+	}
+	else
+	{
+		throw std::runtime_error("Could not find a matching memory type");
+	}
+
+
+	std::cout << "LAZILY SUPPORTED: " << ((memory_properties.memoryTypes->propertyFlags & VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT) != 0) << std::endl;
+
 	[[gsl::suppress(bounds.2)]]{
 	for (uint i = 0; memory_properties.memoryTypeCount; ++i) {
-		if ((type_filter & (1 << i)) &&
+		if ((type_bits & (1 << i)) &&
 			(memory_properties.memoryTypes[i].propertyFlags & properties) == properties) {
 			return i;
 		}
@@ -2213,7 +2251,7 @@ auto Renderer::beginFrame() -> void {
 	We wait for the fence that indicates that we can use the current
 	command buffer
 	*/
-	
+
 	{
 		if (m_command_buffer_submitted[m_current_command_buffer]) {
 
@@ -2563,11 +2601,8 @@ auto Renderer::getSampleBits(short samples)->VkSampleCountFlagBits {
 	case 2: return VK_SAMPLE_COUNT_2_BIT;
 	case 4: return VK_SAMPLE_COUNT_4_BIT;
 	case 8: return VK_SAMPLE_COUNT_8_BIT;
-	case 16: return VK_SAMPLE_COUNT_16_BIT;
-	case 32: return VK_SAMPLE_COUNT_32_BIT;
-	case 64: return VK_SAMPLE_COUNT_64_BIT;
 	default:
-		throw std::invalid_argument("Sample number has to be a power of 2 up to 64");
+		throw std::invalid_argument("Amount of samples supported are 1, 2, 4 or 8");
 	}
 
 }
@@ -2604,10 +2639,30 @@ auto Renderer::createMultisampleRenderTarget(
 	auto alloc = VkMemoryAllocateInfo{};
 	alloc.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 	alloc.allocationSize = memory_requirements.size;
+
+
+	/*
+	@NOTE: We usually can't use LAZILY allocated memory here because
+	lazily-allocated memory and transient attachments is not
+	a thing on desktop.
+	*/
+	VkBool32 lazyMemTypePresent;
 	alloc.memoryTypeIndex = findMemoryType(
 		memory_requirements.memoryTypeBits,
-		VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT);
-	/*@TODO: Investigate why here it might crash*/
+		VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT,
+		&lazyMemTypePresent);
+	if (!lazyMemTypePresent)
+	{
+		/*
+		So if LAZILY allocated memory is not available we fallback
+		to normal device local memory.
+		*/
+		std::cout << "\tLazy memory not supported on the system, falling back to device local memory" << std::endl;
+		alloc.memoryTypeIndex = findMemoryType(
+			memory_requirements.memoryTypeBits,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	}
+
 	if (vkAllocateMemory(m_device, &alloc, nullptr, &memory) != VK_SUCCESS) {
 		throw std::runtime_error("We couldn't allocate memory for an image for the render target");
 	}
@@ -2635,4 +2690,3 @@ auto Renderer::createMultisampleRenderTarget(
 
 	return WrappedRenderTarget{ image, memory, view, width, height };;
 }
-

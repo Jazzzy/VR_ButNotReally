@@ -615,7 +615,7 @@ private:
 	@param Properties of the memory we need
 	@return Appropriate flags of the memory we can use.
 	*/
-	auto findMemoryType(uint type_filter, VkMemoryPropertyFlags properties)->uint;
+	auto findMemoryType(uint type_filter, VkMemoryPropertyFlags properties, VkBool32 *memTypeFound)->uint;
 
 	/**
 	Copies the contents from one VkBuffer to another.
