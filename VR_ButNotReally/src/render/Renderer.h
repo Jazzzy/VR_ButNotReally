@@ -45,6 +45,12 @@ buffers and images without VMA_USE_ALLOCATOR could not be fully supported.
 #pragma warning(pop)
 
 /**
+Our main unsigned in type to accomodate
+vulkan's needs
+*/
+using uint = uint32_t;
+
+/**
 Wrapps a Vulkan Buffer with allocation information tied to it
 */
 struct AllocatedBuffer {
@@ -90,11 +96,19 @@ struct WrappedCommandBuffer {
 	bool recording{ false };
 };
 
+struct WrappedRenderTarget {
+	VkImage image{};
+	VkDeviceMemory memory{};
+	VkImageView view{};
+	uint width{};
+	uint heigth{};
+};
+
 /**
 Struct that holds dynamic configuration parameters of the renderer
 */
 struct RenderConfiguration {
-	short multisampling_samples{config::initial_multisampling_samples};
+	short multisampling_samples{ config::initial_multisampling_samples };
 };
 
 /**
@@ -107,7 +121,6 @@ class Renderer
 {
 private:
 	using WindowPtr = std::unique_ptr<GLFWwindow, GLFWWindowDestroyer>;
-	using uint = uint32_t;
 
 public:
 	/**
@@ -359,7 +372,7 @@ private:
 	@return true if all the extensions are supported, false otherwise
 	*/
 	[[gsl::suppress(bounds.3)]] auto checkDeviceExtensionSupport(const VkPhysicalDevice& device) const -> bool;
-
+	
 	/**
 	Checks and retrieves information about the swap chain capabilities of a physical device.
 	Fills up said information in the SwapChainSupportDetails struct
@@ -493,7 +506,8 @@ private:
 		VmaAllocationCreateFlags allocation_flags,
 		AllocatedImage& image,
 		VkSharingMode sharing_mode,
-		const std::vector<uint>* queue_family_indices) -> void;
+		const std::vector<uint>* queue_family_indices,
+		short samples = 1) -> void;
 
 	/**
 	Destroys the image provided and frees its memory
@@ -628,21 +642,15 @@ private:
 	auto recordCommandBuffers() -> void;
 
 	/**
-	Creates the semaphores necessary for synchronization of
+	Creates the semaphores and fences necessary for synchronization of
 	the rendering phase.
 
 	@see m_image_available_semaphores
 	@see m_render_finished_semaphores
-	*/
-	auto createSemaphores() -> void;
-
-	/**
-	Creates the fences necessary for synchronization of
-	the rendering phase.
-
 	@see m_command_buffer_fences
 	*/
-	auto createFences() -> void;
+	auto createSemaphoresAndFences() -> void;
+
 
 	/**
 	Handles the event of resizing the window to set up the appropriate
@@ -660,7 +668,7 @@ private:
 	@param the type of commands that will be used (graphics also allows transfer)
 	@return The command buffer we are recording to
 	*/
-	auto beginSingleTimeCommands(CommandType command_type = CommandType::graphics) noexcept ->WrappedCommandBuffer;
+	auto beginSingleTimeCommands(CommandType command_type = CommandType::graphics) noexcept->WrappedCommandBuffer;
 
 	/**
 	End recording to a particulaar command buffer and submits it to the queue
@@ -716,7 +724,21 @@ private:
 	@param The number of samples required (power of 2 up to 64)
 	@return The required vulkan flag for the number of samples
 	*/
-	auto getSampleBits(short samples)->VkSampleCountFlags;
+	auto getSampleBits(short samples)->VkSampleCountFlagBits;
+
+	/**
+	Creates a render target for multisampling. This includes, the image,
+	its memory and a view to it.
+	
+	@param Width of the render target
+	@param Height of the render target
+	@param Desired format of the render target
+	@return The render target struct with all the relevant info
+	*/
+	auto createMultisampleRenderTarget(
+		uint width,
+		uint height,
+		VkFormat format)->WrappedRenderTarget;
 
 	/* ---------------------------------------------------------------------------------------------- */
 	/* ---------------------------------------- DATA MEMBERS ---------------------------------------- */
@@ -751,6 +773,8 @@ private:
 	VkQueue m_present_queue{};
 
 	VkQueue m_transfer_queue{};
+
+	WrappedRenderTarget m_render_target{};
 
 	VkSwapchainKHR m_swap_chain{};
 

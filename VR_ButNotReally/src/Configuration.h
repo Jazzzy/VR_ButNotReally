@@ -15,6 +15,12 @@ namespace config {
 	constexpr auto minor_version{ 0 };
 	constexpr auto patch_version{ 0 };
 
+	/* //To set debug info on release
+#undef _DEBUG
+#define _DEBUG
+	*/
+
+
 	constexpr auto validation_layers_enabled =
 #ifndef _DEBUG  //Release
 		false;
@@ -71,6 +77,6 @@ namespace config {
 
 	const auto clear_color = VkClearValue{ 0.0f, 0.0f, 0.0f, 1.0f };
 
-	const short initial_multisampling_samples = 4;
+	const short initial_multisampling_samples = 1;
 
 }

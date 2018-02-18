@@ -99,8 +99,7 @@ auto Renderer::initVulkan() noexcept(false) -> void {
 	createDescriptorSet();
 	createCommandBuffers();
 	recordCommandBuffers();
-	createSemaphores();
-	createFences();
+	createSemaphoresAndFences();
 }
 
 auto Renderer::recreateSwapChain() -> void {
@@ -210,6 +209,12 @@ auto Renderer::cleanupSwapChain() noexcept -> void {
 	}
 
 	vkDestroySwapchainKHR(m_device, m_swap_chain, nullptr);
+
+	if (config.multisampling_samples != 1) {
+		vkDestroyImageView(m_device, m_render_target.view, nullptr);
+		vkDestroyImage(m_device, m_render_target.image, nullptr);
+		vkFreeMemory(m_device, m_render_target.memory, nullptr);
+	}
 
 }
 
@@ -514,7 +519,6 @@ auto Renderer::createSurface() -> void {
 #endif
 
 	std::cout << "\tSurface Created" << std::endl << std::endl;
-
 
 }
 
@@ -856,6 +860,7 @@ auto Renderer::createSwapChain() -> void {
 	const auto present_mode = pickSurfacePresentMode(swap_chain_support.present_modes);
 	const auto extent = pickSwapExtent(swap_chain_support.capabilities);
 
+
 	std::cout << "Selected present mode: " << present_mode << std::endl << std::endl;
 
 	/*
@@ -873,6 +878,10 @@ auto Renderer::createSwapChain() -> void {
 			image_count > swap_chain_support.capabilities.maxImageCount) {	// If our image count is bigger than the maximum available
 			image_count = swap_chain_support.capabilities.maxImageCount;
 		}
+
+	if (config.multisampling_samples != 1) {
+		m_render_target = createMultisampleRenderTarget(extent.width, extent.height, surface_format.format);
+	}
 
 	std::cout << "Number of images required in Swap Chain: " << image_count << std::endl << std::endl;
 
@@ -972,50 +981,109 @@ auto Renderer::createRenderPass() -> void {
 	std::cout << "Creating Render Pass" << std::endl;
 
 
-	auto color_attachment_description = VkAttachmentDescription{};
-	color_attachment_description.format = m_swap_chain_image_format;
-	/*
-	This is also relevant for implementing multisampling
-	*/
-	color_attachment_description.samples = VK_SAMPLE_COUNT_1_BIT;
-	color_attachment_description.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-	color_attachment_description.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-	color_attachment_description.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-	color_attachment_description.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-	color_attachment_description.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	color_attachment_description.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
-	auto color_attachment_reference = VkAttachmentReference{};
-	color_attachment_reference.attachment = 0;
-	color_attachment_reference.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	if (config.multisampling_samples == 1) {
 
-	auto subpass_description = VkSubpassDescription{};
-	subpass_description.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-	subpass_description.colorAttachmentCount = 1;
-	subpass_description.pColorAttachments = &color_attachment_reference;
+		auto render_pass_create_info = VkRenderPassCreateInfo{};
+		auto attachment_descriptions = std::vector<VkAttachmentDescription>(1);
 
-	auto subpass_dependency = VkSubpassDependency{};
-	subpass_dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-	subpass_dependency.dstSubpass = 0;
-	subpass_dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-	subpass_dependency.srcAccessMask = 0;
-	subpass_dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-	subpass_dependency.dstAccessMask =
-		VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
-		VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		attachment_descriptions[0].format = m_swap_chain_image_format;
+		attachment_descriptions[0].samples = VK_SAMPLE_COUNT_1_BIT;
+		attachment_descriptions[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		attachment_descriptions[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		attachment_descriptions[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		attachment_descriptions[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		attachment_descriptions[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		attachment_descriptions[0].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+		auto color_attachment_reference = VkAttachmentReference{};
+		color_attachment_reference.attachment = 0;
+		color_attachment_reference.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+		auto subpass_description = VkSubpassDescription{};
+		subpass_description.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+		subpass_description.colorAttachmentCount = 1;
+		subpass_description.pColorAttachments = &color_attachment_reference;
+
+		auto subpass_dependency = VkSubpassDependency{};
+		subpass_dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+		subpass_dependency.dstSubpass = 0;
+		subpass_dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		subpass_dependency.srcAccessMask = 0;
+		subpass_dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		subpass_dependency.dstAccessMask =
+			VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
+			VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+		render_pass_create_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+		render_pass_create_info.attachmentCount = 1;
+		render_pass_create_info.pAttachments = &attachment_descriptions[0];
+		render_pass_create_info.subpassCount = 1;
+		render_pass_create_info.pSubpasses = &subpass_description;
+		render_pass_create_info.dependencyCount = 1;
+		render_pass_create_info.pDependencies = &subpass_dependency;
+
+		if (vkCreateRenderPass(m_device, &render_pass_create_info, nullptr, &m_render_pass) != VK_SUCCESS) {
+			throw std::runtime_error("We could't create a render pass");
+		}
+	}
+	else {
+		VkAttachmentDescription attachment_descriptions[2] = { { 0 } };
+
+		attachment_descriptions[0].format = m_swap_chain_image_format;
+		attachment_descriptions[0].samples = getSampleBits(config.multisampling_samples);
+		attachment_descriptions[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+
+		attachment_descriptions[0].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+
+		attachment_descriptions[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		attachment_descriptions[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+
+		attachment_descriptions[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		attachment_descriptions[0].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+		attachment_descriptions[1].format = m_swap_chain_image_format;
+		attachment_descriptions[1].samples = VK_SAMPLE_COUNT_1_BIT;
+
+		attachment_descriptions[1].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		attachment_descriptions[1].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		attachment_descriptions[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		attachment_descriptions[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+
+		attachment_descriptions[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		attachment_descriptions[1].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+		const auto color_attachment_reference = VkAttachmentReference{ 0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL };
+		const auto resolve_attachment_reference = VkAttachmentReference{ 1, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL };
 
 
-	auto render_pass_create_info = VkRenderPassCreateInfo{};
-	render_pass_create_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-	render_pass_create_info.attachmentCount = 1;
-	render_pass_create_info.pAttachments = &color_attachment_description;
-	render_pass_create_info.subpassCount = 1;
-	render_pass_create_info.pSubpasses = &subpass_description;
-	render_pass_create_info.dependencyCount = 1;
-	render_pass_create_info.pDependencies = &subpass_dependency;
+		auto subpass_description = VkSubpassDescription{ 0 };
+		subpass_description.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+		subpass_description.colorAttachmentCount = 1;
+		subpass_description.pColorAttachments = &color_attachment_reference;
+		subpass_description.pResolveAttachments = &resolve_attachment_reference;
 
-	if (vkCreateRenderPass(m_device, &render_pass_create_info, nullptr, &m_render_pass) != VK_SUCCESS) {
-		throw std::runtime_error("We could't create a render pass");
+
+		auto subpass_dependency = VkSubpassDependency{ 0 };
+		subpass_dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+		subpass_dependency.dstSubpass = 0;
+		subpass_dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		subpass_dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		subpass_dependency.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		subpass_dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
+
+		auto render_pass_create_info = VkRenderPassCreateInfo{};
+		render_pass_create_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+		render_pass_create_info.attachmentCount = gsl::narrow_cast<uint>(2);
+		render_pass_create_info.pAttachments = attachment_descriptions;
+		render_pass_create_info.subpassCount = 1;
+		render_pass_create_info.pSubpasses = &subpass_description;
+		render_pass_create_info.dependencyCount = 1;
+		render_pass_create_info.pDependencies = &subpass_dependency;
+
+		if (vkCreateRenderPass(m_device, &render_pass_create_info, nullptr, &m_render_pass) != VK_SUCCESS) {
+			throw std::runtime_error("We could't create a render pass");
+		}
 	}
 
 	std::cout << "\tRender Pass Created" << std::endl << std::endl;
@@ -1146,24 +1214,8 @@ auto Renderer::createGraphicsPipeline() -> void {
 
 	auto multisampling_create_info = VkPipelineMultisampleStateCreateInfo{};
 	multisampling_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-	/*
-	We could activate 4XMSAA if we support it with the following code:
-
-	if ((m_physical_device_properties.limits.framebufferColorSampleCounts & VK_SAMPLE_COUNT_4_BIT) != 0) {
-
-		multisampling_create_info.rasterizationSamples = VK_SAMPLE_COUNT_4_BIT;
-
-		. . .
-	}else{	// No MSAA
-
-		//What we already do
-
-	}
-
-	@see createRenderPass
-	*/
 	multisampling_create_info.sampleShadingEnable = VK_FALSE;
-	multisampling_create_info.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+	multisampling_create_info.rasterizationSamples = getSampleBits(config.multisampling_samples);
 	multisampling_create_info.minSampleShading = 1.0f;
 	multisampling_create_info.pSampleMask = nullptr;
 	multisampling_create_info.alphaToCoverageEnable = VK_FALSE;
@@ -1290,15 +1342,26 @@ auto Renderer::createFramebuffers() ->  void {
 	m_swap_chain_framebuffers.resize(m_swap_chain_image_views.size());
 
 	for (size_t i = 0; i < m_swap_chain_image_views.size(); ++i) {
+		auto attachments = std::vector<VkImageView>{};
 
-		VkImageView attachments[] = { m_swap_chain_image_views[i] };
+		if (config.multisampling_samples == 1) {
+			attachments.resize(1);
+			attachments[0] = m_swap_chain_image_views[i];
+			std::vector<VkImageView> attachments = { m_swap_chain_image_views[i] };
+		}
+		else {
+			attachments.resize(2);
+			attachments[0] = m_render_target.view;
+			attachments[1] = m_swap_chain_image_views[i];
+		}
+
 
 		auto frame_buffer_create_info = VkFramebufferCreateInfo{};
 		frame_buffer_create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
 		frame_buffer_create_info.renderPass = m_render_pass;
-		frame_buffer_create_info.attachmentCount = 1;
+		frame_buffer_create_info.attachmentCount = gsl::narrow_cast<uint>(attachments.size());
 		[[gsl::suppress(bounds.3)]]{
-		frame_buffer_create_info.pAttachments = attachments;
+		frame_buffer_create_info.pAttachments = attachments.data();
 		}
 		frame_buffer_create_info.width = m_swap_chain_extent.width;
 		frame_buffer_create_info.height = m_swap_chain_extent.height;
@@ -1378,7 +1441,8 @@ auto Renderer::createImage(
 	VmaAllocationCreateFlags allocation_flags,
 	AllocatedImage& image,
 	VkSharingMode sharing_mode,
-	const std::vector<uint>* queue_family_indices) -> void {
+	const std::vector<uint>* queue_family_indices,
+	short samples) -> void {
 
 	auto create_info = VkImageCreateInfo{};
 	{
@@ -1406,7 +1470,7 @@ auto Renderer::createImage(
 			create_info.queueFamilyIndexCount = 0;
 			create_info.pQueueFamilyIndices = nullptr;
 		}
-		create_info.samples = VK_SAMPLE_COUNT_1_BIT;
+		create_info.samples = getSampleBits(samples);
 		create_info.flags = 0; // default value
 	}
 
@@ -1449,7 +1513,7 @@ auto Renderer::createTextureImage() -> void {
 		STBI_rgb_alpha);
 
 	if (!pixels) {
-		std::runtime_error("Couldn't load provided texture image");
+		throw std::runtime_error("Couldn't load provided texture image");
 	}
 
 	[[gsl::suppress(type.4, 6387)]]{
@@ -1539,6 +1603,7 @@ auto Renderer::createTextureImageView() -> void {
 }
 
 auto Renderer::createTextureSampler() -> void {
+
 	std::cout << "\tCreating Texture Sampler" << std::endl;
 
 	auto create_info = VkSamplerCreateInfo{};
@@ -1910,6 +1975,7 @@ auto Renderer::createDescriptorSet() -> void {
 		descriptor_writes.at(1).pTexelBufferView = nullptr; // default value
 	}
 
+
 	vkUpdateDescriptorSets(
 		m_device,
 		gsl::narrow_cast<uint>(descriptor_writes.size()),
@@ -1980,7 +2046,6 @@ auto Renderer::createCommandBuffers() ->  void {
 	std::fill(m_command_buffer_submitted.begin(), m_command_buffer_submitted.end(), false);
 
 	std::cout << "\tCommand Buffers Created" << std::endl << std::endl;
-
 }
 
 auto Renderer::recordCommandBuffers() -> void {
@@ -2004,11 +2069,23 @@ auto Renderer::recordCommandBuffers() -> void {
 
 		@see m_current_swapchain_buffer
 		*/
-		render_info.framebuffer = m_swap_chain_framebuffers[i];
-		render_info.renderArea.offset = { 0, 0 };
-		render_info.renderArea.extent = m_swap_chain_extent;
-		render_info.clearValueCount = 1;
-		render_info.pClearValues = &config::clear_color;
+
+		VkClearValue clear_values[] = { config::clear_color , config::clear_color , config::clear_color };
+
+		if (config.multisampling_samples == 1) {
+			render_info.framebuffer = m_swap_chain_framebuffers[i];
+			render_info.renderArea.offset = { 0, 0 };
+			render_info.renderArea.extent = m_swap_chain_extent;
+			render_info.clearValueCount = 1;
+			render_info.pClearValues = clear_values;
+		}
+		else {
+			render_info.framebuffer = m_swap_chain_framebuffers[i];
+			render_info.renderArea.offset = { 0, 0 };
+			render_info.renderArea.extent = m_swap_chain_extent;
+			render_info.clearValueCount = 2;
+			render_info.pClearValues = clear_values;
+		}
 
 		vkCmdBeginRenderPass(m_command_buffers[i], &render_info, VK_SUBPASS_CONTENTS_INLINE);
 
@@ -2048,56 +2125,51 @@ auto Renderer::recordCommandBuffers() -> void {
 	std::cout << "\tCommand Buffers Recorded" << std::endl << std::endl;
 }
 
-auto Renderer::createSemaphores() -> void {
 
-	std::cout << "Creating Semaphores" << std::endl;
+auto Renderer::createSemaphoresAndFences() -> void {
 
-	auto create_info = VkSemaphoreCreateInfo{};
-	create_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+	std::cout << "Creating Semaphores And Fences" << std::endl;
 
 	m_image_available_semaphores.resize(m_swap_chain_images.size());
 
 	for (auto i = 0; i < m_swap_chain_images.size(); ++i) {
 
-		if (vkCreateSemaphore(m_device, &create_info, nullptr, &m_image_available_semaphores[i]) != VK_SUCCESS) {
+		auto semaphore_create_info = VkSemaphoreCreateInfo{};
+		memset(&semaphore_create_info, 0, sizeof(semaphore_create_info));
+		semaphore_create_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+		if (vkCreateSemaphore(m_device, &semaphore_create_info, nullptr, &m_image_available_semaphores[i]) != VK_SUCCESS) {
 			throw std::runtime_error("We couldn't create a semaphore to check when the image is available");
 		}
-
 	}
 
 	m_render_finished_semaphores.resize(m_command_buffers.size());
+	m_command_buffer_fences.resize(m_command_buffers.size());
+
+	auto fence_create_info = VkFenceCreateInfo{};
+	memset(&fence_create_info, 0, sizeof(fence_create_info));
+	fence_create_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+
 	for (auto i = 0; i < m_command_buffers.size(); ++i) {
 
-		if (vkCreateSemaphore(m_device, &create_info, nullptr, &m_render_finished_semaphores[i]) != VK_SUCCESS) {
+		auto semaphore_create_info = VkSemaphoreCreateInfo{};
+		memset(&semaphore_create_info, 0, sizeof(semaphore_create_info));
+		semaphore_create_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+		if (vkCreateSemaphore(m_device, &semaphore_create_info, nullptr, &m_render_finished_semaphores[i]) != VK_SUCCESS) {
 			throw std::runtime_error("We couldn't create semaphore to check when rendering has been finished");
 		}
 
-	}
-
-	std::cout << "\tSemaphores Created" << std::endl << std::endl;
-
-
-}
-
-auto Renderer::createFences() -> void {
-
-	std::cout << "Creating Fences" << std::endl;
-
-	auto create_info = VkFenceCreateInfo{};
-	create_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-
-	m_command_buffer_fences.resize(m_command_buffers.size());
-	for (auto i = 0; i < m_command_buffers.size(); ++i) {
-
-		if (vkCreateFence(m_device, &create_info, nullptr, &m_command_buffer_fences[i]) != VK_SUCCESS) {
-			throw std::runtime_error("We couldn't create a fence to sinchronize the command buffers");
+		if (vkCreateFence(m_device, &fence_create_info, nullptr, &m_command_buffer_fences[i]) != VK_SUCCESS) {
+			throw std::runtime_error("We couldn't create fence to check when rendering has been finished");
 		}
 
 	}
 
-	std::cout << "\tFences Created" << std::endl << std::endl;
+	std::cout << "\tSemaphores And Fences Created" << std::endl << std::endl;
 
 }
+
 
 auto Renderer::updateUniformBuffer() ->void {
 
@@ -2136,14 +2208,15 @@ auto Renderer::updateUniformBuffer() ->void {
 
 auto Renderer::beginFrame() -> void {
 
-	vkQueueWaitIdle(m_graphics_queue);
 
 	/*
 	We wait for the fence that indicates that we can use the current
 	command buffer
 	*/
+	
 	{
 		if (m_command_buffer_submitted[m_current_command_buffer]) {
+
 			if (vkWaitForFences(
 				m_device,
 				1,
@@ -2151,14 +2224,15 @@ auto Renderer::beginFrame() -> void {
 				VK_TRUE,
 				std::numeric_limits<uint64_t>::max())
 				!= VK_SUCCESS) {
-				std::runtime_error("We couldn't wait for the fence involving the current command buffer");
+				throw std::runtime_error("We couldn't wait for the fence involving the current command buffer");
 			}
 		}
 
 		if (vkResetFences(m_device, 1, &m_command_buffer_fences[m_current_command_buffer])) {
-			std::runtime_error("We couldn't reset the fence involving the current command buffer");
+			throw std::runtime_error("We couldn't reset the fence involving the current command buffer");
 		}
 	}
+
 
 	/*
 	@TODO: Beginning of the recording of the current Command Buffer
@@ -2222,7 +2296,7 @@ auto Renderer::endFrame() -> void {
 	VkSemaphore signal_semaphores[] = { m_render_finished_semaphores[m_current_command_buffer] };
 
 	/*
-	We submit the current command buffer to the graphics queue
+	We submit the current command buffer to the graphics queue and reset the fences.
 	*/
 	[[gsl::suppress(bounds.3)]]
 	{
@@ -2482,7 +2556,7 @@ auto Renderer::createImageView(VkImage image, VkFormat format)->VkImageView {
 	return image_view;
 }
 
-auto Renderer::getSampleBits(short samples)->VkSampleCountFlags {
+auto Renderer::getSampleBits(short samples)->VkSampleCountFlagBits {
 
 	switch (samples) {
 	case 1: return VK_SAMPLE_COUNT_1_BIT;
@@ -2496,5 +2570,68 @@ auto Renderer::getSampleBits(short samples)->VkSampleCountFlags {
 		throw std::invalid_argument("Sample number has to be a power of 2 up to 64");
 	}
 
+}
+
+auto Renderer::createMultisampleRenderTarget(
+	uint width,
+	uint height,
+	VkFormat format)->WrappedRenderTarget {
+
+	auto image_create_info = VkImageCreateInfo{};
+	image_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	image_create_info.imageType = VK_IMAGE_TYPE_2D;
+	image_create_info.format = format;
+	image_create_info.extent.width = width;
+	image_create_info.extent.height = height;
+	image_create_info.extent.depth = 1;
+	image_create_info.mipLevels = 1;
+	image_create_info.arrayLayers = 1;
+	image_create_info.samples = getSampleBits(config.multisampling_samples);
+	image_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	image_create_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+	image_create_info.usage = VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+	image_create_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+	auto image = VkImage{};
+	auto memory = VkDeviceMemory{};
+	if (vkCreateImage(m_device, &image_create_info, nullptr, &image) != VK_SUCCESS) {
+		throw std::runtime_error("We couldn't create an image for the render target");
+	}
+
+	auto memory_requirements = VkMemoryRequirements{};
+	vkGetImageMemoryRequirements(m_device, image, &memory_requirements);
+
+	auto alloc = VkMemoryAllocateInfo{};
+	alloc.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	alloc.allocationSize = memory_requirements.size;
+	alloc.memoryTypeIndex = findMemoryType(
+		memory_requirements.memoryTypeBits,
+		VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT);
+	if (vkAllocateMemory(m_device, &alloc, nullptr, &memory) != VK_SUCCESS) {
+		throw std::runtime_error("We couldn't allocate memory for an image for the render target");
+	}
+
+	vkBindImageMemory(m_device, image, memory, 0);
+
+	auto view_create_info = VkImageViewCreateInfo{};
+	view_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	view_create_info.image = image;
+	view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	view_create_info.format = format;
+	view_create_info.components.r = VK_COMPONENT_SWIZZLE_R;
+	view_create_info.components.g = VK_COMPONENT_SWIZZLE_G;
+	view_create_info.components.b = VK_COMPONENT_SWIZZLE_B;
+	view_create_info.components.a = VK_COMPONENT_SWIZZLE_A;
+	view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	view_create_info.subresourceRange.levelCount = 1;
+	view_create_info.subresourceRange.layerCount = 1;
+
+	auto view = VkImageView{};
+
+	if (vkCreateImageView(m_device, &view_create_info, nullptr, &view) != VK_SUCCESS) {
+		throw std::runtime_error("We couldn't create an image view for the image for the render target");
+	}
+
+	return WrappedRenderTarget{ image, memory, view, width, height };;
 }
 
