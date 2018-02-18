@@ -2607,6 +2607,7 @@ auto Renderer::createMultisampleRenderTarget(
 	alloc.memoryTypeIndex = findMemoryType(
 		memory_requirements.memoryTypeBits,
 		VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT);
+	/*@TODO: Investigate why here it might crash*/
 	if (vkAllocateMemory(m_device, &alloc, nullptr, &memory) != VK_SUCCESS) {
 		throw std::runtime_error("We couldn't allocate memory for an image for the render target");
 	}

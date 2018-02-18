@@ -77,6 +77,6 @@ namespace config {
 
 	const auto clear_color = VkClearValue{ 0.0f, 0.0f, 0.0f, 1.0f };
 
-	const short initial_multisampling_samples = 1;
+	const short initial_multisampling_samples = 8;
 
 }
