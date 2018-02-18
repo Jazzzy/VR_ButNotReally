@@ -32,8 +32,11 @@ Include section without warnings from GSL
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#pragma warning(disable: 6001 6308 6262 6387 28182)
+
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
+
 
 #pragma warning(pop)
 
@@ -513,7 +516,7 @@ auto Renderer::createSurface() -> void {
 	std::cout << "\tSurface Created" << std::endl << std::endl;
 
 
-	}
+}
 
 auto Renderer::pickPhysicalDevice() -> void {
 
@@ -1449,6 +1452,7 @@ auto Renderer::createTextureImage() -> void {
 		std::runtime_error("Couldn't load provided texture image");
 	}
 
+	[[gsl::suppress(type.4, 6387)]]{
 	const auto image_size = VkDeviceSize{ gsl::narrow_cast<VkDeviceSize>(texture_width * texture_height * 4) };
 
 
@@ -1472,6 +1476,7 @@ auto Renderer::createTextureImage() -> void {
 			pixels,
 			gsl::narrow_cast<size_t>(image_size));
 	}
+
 
 	stbi_image_free(pixels);
 
@@ -1521,7 +1526,7 @@ auto Renderer::createTextureImage() -> void {
 		VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
 	destroyBuffer(staging_buffer);
-
+	}
 	std::cout << "\tTexture Image Created" << std::endl << std::endl;
 }
 
@@ -1579,7 +1584,7 @@ auto Renderer::createTextureSampler() -> void {
 	}
 
 	std::cout << "\tTexture Sampler Created" << std::endl << std::endl;
-	}
+}
 
 auto Renderer::createBuffer(
 	VkDeviceSize size,
@@ -1654,13 +1659,13 @@ auto Renderer::destroyBuffer(
 ) noexcept -> void {
 
 #ifdef VMA_USE_ALLOCATOR
-		vmaDestroyBuffer(m_vma_allocator, allocated_buffer.buffer, allocated_buffer.allocation);
+	vmaDestroyBuffer(m_vma_allocator, allocated_buffer.buffer, allocated_buffer.allocation);
 #else
-		vkDestroyBuffer(m_device, allocated_buffer.buffer, nullptr);
-		vkFreeMemory(m_device, allocated_buffer.memory, nullptr);
+	vkDestroyBuffer(m_device, allocated_buffer.buffer, nullptr);
+	vkFreeMemory(m_device, allocated_buffer.memory, nullptr);
 #endif
 
-	}
+}
 
 auto Renderer::createVertexBuffer() -> void {
 
@@ -1791,7 +1796,7 @@ auto Renderer::createIndexBuffer() -> void {
 		copyBuffer(staging_buffer.buffer, m_index_buffer.buffer, buffer_size);
 
 		destroyBuffer(staging_buffer);
-}
+	}
 
 	std::cout << "\tIndex Buffer Created" << std::endl << std::endl;
 }
@@ -1882,7 +1887,7 @@ auto Renderer::createDescriptorSet() -> void {
 	image_info.imageView = m_texture_image_view;
 	image_info.sampler = m_texture_sampler;
 
-	auto descriptor_writes = std::array<VkWriteDescriptorSet,2>{};
+	auto descriptor_writes = std::array<VkWriteDescriptorSet, 2>{};
 	{
 		descriptor_writes.at(0).sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		descriptor_writes.at(0).dstSet = m_descriptor_set;
@@ -2058,7 +2063,7 @@ auto Renderer::createSemaphores() -> void {
 			throw std::runtime_error("We couldn't create a semaphore to check when the image is available");
 		}
 
-}
+	}
 
 	m_render_finished_semaphores.resize(m_command_buffers.size());
 	for (auto i = 0; i < m_command_buffers.size(); ++i) {
@@ -2289,7 +2294,7 @@ auto Renderer::onWindowsResized(GLFWwindow * window, int width, int height) -> v
 	std::cout << " - Window resized to (" << width << ", " << height << ")" << std::endl;
 }
 
-auto Renderer::beginSingleTimeCommands(CommandType command_type)->WrappedCommandBuffer {
+auto Renderer::beginSingleTimeCommands(CommandType command_type) noexcept ->WrappedCommandBuffer {
 	auto allocate_info = VkCommandBufferAllocateInfo{};
 	allocate_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 	allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
@@ -2321,7 +2326,7 @@ auto Renderer::beginSingleTimeCommands(CommandType command_type)->WrappedCommand
 	return command_buffer;
 }
 
-auto Renderer::endSingleTimeCommands(WrappedCommandBuffer& command_buffer)->void {
+auto Renderer::endSingleTimeCommands(WrappedCommandBuffer& command_buffer) noexcept ->void {
 
 	vkEndCommandBuffer(command_buffer.buffer);
 	command_buffer.recording = false;
@@ -2418,7 +2423,7 @@ auto Renderer::copyBufferToImage(
 	VkBuffer buffer,
 	VkImage image,
 	uint width,
-	uint heigth) -> void {
+	uint heigth) noexcept -> void {
 
 	auto command_buffer = beginSingleTimeCommands();
 	{
@@ -2476,3 +2481,20 @@ auto Renderer::createImageView(VkImage image, VkFormat format)->VkImageView {
 
 	return image_view;
 }
+
+auto Renderer::getSampleBits(short samples)->VkSampleCountFlags {
+
+	switch (samples) {
+	case 1: return VK_SAMPLE_COUNT_1_BIT;
+	case 2: return VK_SAMPLE_COUNT_2_BIT;
+	case 4: return VK_SAMPLE_COUNT_4_BIT;
+	case 8: return VK_SAMPLE_COUNT_8_BIT;
+	case 16: return VK_SAMPLE_COUNT_16_BIT;
+	case 32: return VK_SAMPLE_COUNT_32_BIT;
+	case 64: return VK_SAMPLE_COUNT_64_BIT;
+	default:
+		throw std::invalid_argument("Sample number has to be a power of 2 up to 64");
+	}
+
+}
+

@@ -23,6 +23,7 @@
 
 #include "../utils/Utils.h"
 #include "./RenderUtils.h"
+#include "../Configuration.h"
 
 /*
 We define this in case we want to use VulkanMemoryAllocator's
@@ -78,12 +79,23 @@ struct AllocatedImage {
 
 #endif
 
+
+/**
+Wrapps a Vulkan Command Buffer with relevant
+type and state information tied to it
+*/
 struct WrappedCommandBuffer {
 	VkCommandBuffer buffer{};
 	CommandType type{};
 	bool recording{ false };
 };
 
+/**
+Struct that holds dynamic configuration parameters of the renderer
+*/
+struct RenderConfiguration {
+	short multisampling_samples{config::initial_multisampling_samples};
+};
 
 /**
 Used for managing all the rendering logic of the application.
@@ -648,7 +660,7 @@ private:
 	@param the type of commands that will be used (graphics also allows transfer)
 	@return The command buffer we are recording to
 	*/
-	auto beginSingleTimeCommands(CommandType command_type = CommandType::graphics)->WrappedCommandBuffer;
+	auto beginSingleTimeCommands(CommandType command_type = CommandType::graphics) noexcept ->WrappedCommandBuffer;
 
 	/**
 	End recording to a particulaar command buffer and submits it to the queue
@@ -656,7 +668,7 @@ private:
 	@param The command buffer to submit to the queue
 	*/
 	auto endSingleTimeCommands(
-		WrappedCommandBuffer& command_buffer)->void;
+		WrappedCommandBuffer& command_buffer) noexcept ->void;
 
 	/**
 	Helper function that changes the image layout to a new one
@@ -685,7 +697,7 @@ private:
 		VkBuffer buffer,
 		VkImage image,
 		uint width,
-		uint heigth) -> void;
+		uint heigth) noexcept -> void;
 
 	/**
 	Helped function that creates an image view to the
@@ -697,9 +709,20 @@ private:
 	*/
 	auto createImageView(VkImage image, VkFormat format)->VkImageView;
 
+	/**
+	Helper function that calculates the required flags to
+	set up an especific amount of samples.
+
+	@param The number of samples required (power of 2 up to 64)
+	@return The required vulkan flag for the number of samples
+	*/
+	auto getSampleBits(short samples)->VkSampleCountFlags;
+
 	/* ---------------------------------------------------------------------------------------------- */
 	/* ---------------------------------------- DATA MEMBERS ---------------------------------------- */
 	/* ---------------------------------------------------------------------------------------------- */
+
+	RenderConfiguration config{};
 
 #ifdef VMA_USE_ALLOCATOR
 	VmaAllocator m_vma_allocator{};
