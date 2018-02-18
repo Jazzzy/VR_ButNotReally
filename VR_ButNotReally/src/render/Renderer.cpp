@@ -1033,7 +1033,7 @@ auto Renderer::createRenderPass() -> void {
 
 		/*
 		We set up the attachments for the render pass
-		
+
 		https://github.com/SaschaWillems/Vulkan/blob/master/examples/multisampling/multisampling.cpp @ 247
 		*/
 
@@ -2023,22 +2023,8 @@ auto Renderer::findMemoryType(uint type_bits, VkMemoryPropertyFlags properties, 
 	}
 	else
 	{
-		throw std::runtime_error("Could not find a matching memory type");
+		throw std::runtime_error("We couldn't find an appropriate memory type");
 	}
-
-
-	std::cout << "LAZILY SUPPORTED: " << ((memory_properties.memoryTypes->propertyFlags & VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT) != 0) << std::endl;
-
-	[[gsl::suppress(bounds.2)]]{
-	for (uint i = 0; memory_properties.memoryTypeCount; ++i) {
-		if ((type_bits & (1 << i)) &&
-			(memory_properties.memoryTypes[i].propertyFlags & properties) == properties) {
-			return i;
-		}
-	}
-	}
-
-	throw std::runtime_error("We couldn't find an appropriate memory type");
 }
 
 auto Renderer::copyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size) noexcept -> void {
@@ -2264,7 +2250,7 @@ auto Renderer::beginFrame() -> void {
 				!= VK_SUCCESS) {
 				throw std::runtime_error("We couldn't wait for the fence involving the current command buffer");
 			}
-		}
+}
 
 		if (vkResetFences(m_device, 1, &m_command_buffer_fences[m_current_command_buffer])) {
 			throw std::runtime_error("We couldn't reset the fence involving the current command buffer");
