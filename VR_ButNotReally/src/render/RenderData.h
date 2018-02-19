@@ -8,11 +8,100 @@
 #include <CppCoreCheck/Warnings.h>
 #pragma warning(disable: ALL_CPPCORECHECK_WARNINGS)
 #include <glm/glm.hpp>
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/hash.hpp>
 #pragma warning(pop)
 
 #include <vulkan/vulkan.h>
 
+#include "../utils/Utils.h"
+#include "./RenderUtils.h"
+#include "../Configuration.h"
 
+#define VMA_USE_ALLOCATOR
+#ifdef VMA_USE_ALLOCATOR
+#pragma warning(push)
+#include <CppCoreCheck/Warnings.h>
+#pragma warning(disable: ALL_CPPCORECHECK_WARNINGS)
+#include "vk_mem_alloc.h"
+#pragma warning(pop)
+
+/**
+Our main unsigned in type to accomodate
+vulkan's needs
+*/
+using uint = uint32_t;
+
+/**
+Wrapps a Vulkan Buffer with allocation information tied to it
+*/
+struct AllocatedBuffer {
+	VkBuffer buffer{};
+	VmaAllocation allocation{};
+	VmaAllocationInfo allocation_info{};
+};
+
+/**
+Wrapps a Vulkan Image with allocation information tied to it
+*/
+struct AllocatedImage {
+	VkImage image{};
+	VmaAllocation allocation{};
+	VmaAllocationInfo allocation_info{};
+};
+
+#else
+
+#pragma message ( "This program is meant to currently use VMA allocation" )
+#error Current code needs to use VMA allocation
+
+struct AllocatedBuffer {
+	VkBuffer buffer{};
+	VkDeviceMemory memory{};
+};
+
+struct AllocatedImage {
+	VkImage image{};
+	VkDeviceMemory memory{};
+};
+
+#endif
+
+
+/**
+Wraps a Vulkan Command Buffer with relevant
+type and state information tied to it
+*/
+struct WrappedCommandBuffer {
+	VkCommandBuffer buffer{};
+	CommandType type{};
+	bool recording{ false };
+};
+
+/**
+Wraps a Vulkan Render Target with all the relevant information to
+render to it like the image, memory, view, width, heigth and if it has
+been initializated.
+
+We are not using an "AllocatedImage" because allocation of a render target
+is done with a custom method because of the special requirements of it being
+a render target.
+*/
+struct WrappedRenderTarget {
+	VkImage image{};
+	VkDeviceMemory memory{};
+	VkImageView view{};
+	uint width{};
+	uint heigth{};
+	bool init{ false };
+};
+
+/**
+Struct that holds dynamic configuration parameters of the renderer
+*/
+struct RenderConfiguration {
+	short multisampling_samples{ config::initial_multisampling_samples };
+};
 
 struct Vertex {
 	glm::vec3 pos{};
@@ -51,8 +140,24 @@ struct Vertex {
 
 		return attribute_descriptions;
 	}
+
+	auto operator==(const Vertex& other) const ->bool {
+		return	pos == other.pos &&
+				color == other.color &&
+				tex_coord == other.tex_coord;
+	}
 };
 
+namespace std {
+	template<> struct hash<Vertex> {
+		size_t operator()(Vertex const& vertex) const {
+			return(
+				(hash<glm::vec3>()(vertex.pos) ^
+				(hash<glm::vec3>()(vertex.color) << 1)) >> 1) ^
+				(hash<glm::vec2>()(vertex.tex_coord) << 1);
+		}
+	};
+}
 
 /*
 MVP model.
@@ -67,6 +172,14 @@ struct UniformBufferObject {
 };
 
 
+struct SimpleObjScene {
+	std::vector<Vertex> vertices;
+	std::vector<uint32_t> indices;
+	AllocatedImage m_texture_image{};
+	VkImageView m_texture_image_view{};
+};
+
+#if 0
 #pragma warning(push)
 #include <CppCoreCheck/Warnings.h>
 #pragma warning(disable: 26426)
@@ -87,5 +200,6 @@ const auto indices = std::vector<uint16_t>{
 	4, 5, 6, 6, 7, 4
 };
 #pragma warning(pop)
+#endif
 
 

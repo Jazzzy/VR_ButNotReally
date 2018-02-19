@@ -21,9 +21,6 @@
 #undef min
 #endif
 
-#include "../utils/Utils.h"
-#include "./RenderUtils.h"
-#include "../Configuration.h"
 
 /*
 We define this in case we want to use VulkanMemoryAllocator's
@@ -36,90 +33,11 @@ buffers and images without VMA_USE_ALLOCATOR could not be fully supported.
 */
 #define VMA_USE_ALLOCATOR
 
+#include "../utils/Utils.h"
+#include "./RenderUtils.h"
+#include "../Configuration.h"
+#include "RenderData.h"
 
-#ifdef VMA_USE_ALLOCATOR
-#pragma warning(push)
-#include <CppCoreCheck/Warnings.h>
-#pragma warning(disable: ALL_CPPCORECHECK_WARNINGS)
-#include "vk_mem_alloc.h"
-#pragma warning(pop)
-
-/**
-Our main unsigned in type to accomodate
-vulkan's needs
-*/
-using uint = uint32_t;
-
-/**
-Wrapps a Vulkan Buffer with allocation information tied to it
-*/
-struct AllocatedBuffer {
-	VkBuffer buffer{};
-	VmaAllocation allocation{};
-	VmaAllocationInfo allocation_info{};
-};
-
-/**
-Wrapps a Vulkan Image with allocation information tied to it
-*/
-struct AllocatedImage {
-	VkImage image{};
-	VmaAllocation allocation{};
-	VmaAllocationInfo allocation_info{};
-};
-
-#else
-
-#pragma message ( "This program is meant to currently use VMA allocation" )
-#error Current code needs to use VMA allocation
-
-struct AllocatedBuffer {
-	VkBuffer buffer{};
-	VkDeviceMemory memory{};
-};
-
-struct AllocatedImage {
-	VkImage image{};
-	VkDeviceMemory memory{};
-};
-
-#endif
-
-
-/**
-Wraps a Vulkan Command Buffer with relevant
-type and state information tied to it
-*/
-struct WrappedCommandBuffer {
-	VkCommandBuffer buffer{};
-	CommandType type{};
-	bool recording{ false };
-};
-
-/**
-Wraps a Vulkan Render Target with all the relevant information to
-render to it like the image, memory, view, width, heigth and if it has
-been initializated.
-
-We are not using an "AllocatedImage" because allocation of a render target
-is done with a custom method because of the special requirements of it being
-a render target.
-*/
-struct WrappedRenderTarget {
-	VkImage image{};
-	VkDeviceMemory memory{};
-	VkImageView view{};
-	uint width{};
-	uint heigth{};
-	bool init{ false };
-};
-
-/**
-Struct that holds dynamic configuration parameters of the renderer
-*/
-struct RenderConfiguration {
-	short multisampling_samples{ config::initial_multisampling_samples };
-};
 
 /**
 Used for managing all the rendering logic of the application.
@@ -156,7 +74,7 @@ public:
 
 	@see m_uniform_buffer
 	*/
-	auto updateUniformBuffer() ->void;
+	auto updateRotateTestUniformBuffer() ->void;
 
 	/**
 	Sets up the beggining of a frame. Setting up the recording of a
@@ -558,16 +476,27 @@ private:
 	/**
 	Creates a texture image with the data loaded from a file
 
-	@see m_texture_image
+	@param the path of th texture
+	@return The allocated image with the texture
 	*/
-	auto createTextureImage() -> void;
+	auto createTextureImage(std::string path) -> AllocatedImage;
 
 	/**
 	Creates a texture image view into the texture image
 
-	@see m_texture_image_view
+	@param The image to create the view from
+	@return An image view for the provided image.
 	*/
-	auto createTextureImageView() -> void;
+	auto createTextureImageView(AllocatedImage image) -> VkImageView;
+
+	/**
+	Loads the scene with the provided object (.obj) and texture paths
+
+	@param The path to the .obj model
+	@param The path to the texture for the model
+	@see m_scene
+	*/
+	auto loadScene(std::string object_path, std::string texture_path) -> void;
 
 	/**
 	Creates a sampler to sample the textures
@@ -891,6 +820,8 @@ private:
 
 	VkPipelineLayout m_pipeline_layout{};
 
+	SimpleObjScene m_scene{};
+
 	VkDescriptorSetLayout m_descriptor_set_layout{};
 
 	VkPipeline m_pipeline{};
@@ -910,10 +841,6 @@ private:
 	AllocatedImage m_depth_image{};
 
 	VkImageView m_depth_image_view{};
-
-	AllocatedImage m_texture_image{};
-
-	VkImageView m_texture_image_view{};
 
 	VkSampler m_texture_sampler{};
 

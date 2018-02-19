@@ -1,11 +1,11 @@
 #include "Renderer.h"
 #include "../Configuration.h"
 #include <vulkan/vk_platform.h>
-#include "RenderData.h"
 #include <limits>
 #include <map>
 #include <set>
 #include <algorithm>
+#include <unordered_map>
 #include <chrono>
 #include <CppCoreCheck/Warnings.h>
 
@@ -38,6 +38,8 @@ Include section without warnings from GSL
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
+#define TINYOBJLOADER_IMPLEMENTATION
+#include <tiny_obj_loader.h>
 
 #pragma warning(pop)
 
@@ -91,8 +93,9 @@ auto Renderer::initVulkan() noexcept(false) -> void {
 	createTransferCommandPool();
 	createDepthResources();
 	createFramebuffers();
-	createTextureImage();
-	createTextureImageView();
+	loadScene(
+		config::model_path + "obj/tarzan/Tarzan_packed/tarzan_scaled.obj",
+		config::model_path + "obj/tarzan/Tarzan_packed/Tarzan_packed_full.png");
 	createTextureSampler();
 	createVertexBuffer();
 	createIndexBuffer();
@@ -144,8 +147,8 @@ auto Renderer::cleanup() noexcept -> void {
 
 	vkDestroySampler(m_device, m_texture_sampler, nullptr);
 
-	vkDestroyImageView(m_device, m_texture_image_view, nullptr);
-	destroyImage(m_texture_image);
+	vkDestroyImageView(m_device, m_scene.m_texture_image_view, nullptr);
+	destroyImage(m_scene.m_texture_image);
 
 	/*
 	This also frees the memory of the descriptor sets it contains
@@ -1620,17 +1623,18 @@ auto Renderer::createDepthResources() -> void {
 
 }
 
-auto Renderer::createTextureImage() -> void {
+auto Renderer::createTextureImage(std::string path)->AllocatedImage {
 
 	std::cout << "Creating Texture Image" << std::endl;
 
+	AllocatedImage image{};
 
 	auto texture_width = 0;
 	auto texture_height = 0;
 	auto texture_channels = 0;
 
 	auto pixels = stbi_load(
-		"./res/images/test_image.png",
+		path.c_str(),
 		&texture_width,
 		&texture_height,
 		&texture_channels,
@@ -1690,25 +1694,25 @@ auto Renderer::createTextureImage() -> void {
 			VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
 			VMA_MEMORY_USAGE_GPU_ONLY,
 			0,
-			m_texture_image,
+			image,
 			queue_family_indices.size() > 1 ? VK_SHARING_MODE_CONCURRENT : VK_SHARING_MODE_EXCLUSIVE,
 			&queue_family_indices);
 	}
 
 	changeImageLayout(
-		m_texture_image.image,
+		image.image,
 		VK_FORMAT_B8G8R8A8_UNORM,
 		VK_IMAGE_LAYOUT_UNDEFINED,
 		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
 	copyBufferToImage(
 		staging_buffer.buffer,
-		m_texture_image.image,
+		image.image,
 		gsl::narrow_cast<uint>(texture_width),
 		gsl::narrow_cast<uint>(texture_height));
 
 	changeImageLayout(
-		m_texture_image.image,
+		image.image,
 		VK_FORMAT_B8G8R8A8_UNORM,
 		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 		VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
@@ -1716,17 +1720,67 @@ auto Renderer::createTextureImage() -> void {
 	destroyBuffer(staging_buffer);
 	}
 	std::cout << "\tTexture Image Created" << std::endl << std::endl;
+	return image;
 }
 
-auto Renderer::createTextureImageView() -> void {
+auto Renderer::createTextureImageView(AllocatedImage image) -> VkImageView {
+
+	VkImageView image_view;
+
 	std::cout << "Creating Texture Image View " << std::endl;
 
-	m_texture_image_view = createImageView(
-		m_texture_image.image,
+	image_view = createImageView(
+		image.image,
 		VK_FORMAT_R8G8B8A8_UNORM,
 		VK_IMAGE_ASPECT_COLOR_BIT);
 
 	std::cout << "\tTexture Image View Created" << std::endl << std::endl;
+
+	return image_view;
+}
+
+
+auto Renderer::loadScene(std::string object_path, std::string texture_path) -> void {
+
+	m_scene.indices.clear();
+	m_scene.vertices.clear();
+	m_scene.m_texture_image = createTextureImage(texture_path);
+	m_scene.m_texture_image_view = createTextureImageView(m_scene.m_texture_image);
+
+	tinyobj::attrib_t attributes;
+	std::vector<tinyobj::shape_t> shapes;
+	std::vector<tinyobj::material_t> materials;
+	std::string err;
+
+	if (!tinyobj::LoadObj(&attributes, &shapes, &materials, &err, object_path.c_str())) {
+		throw std::runtime_error(err);
+	}
+
+	auto unique_vertices = std::unordered_map<Vertex, uint>{};
+
+	for (const auto& shape : shapes) {
+		for (const auto& index : shape.mesh.indices) {
+			auto vertex = Vertex{};
+
+			vertex.pos = {
+				attributes.vertices[3 * index.vertex_index + 0],
+				attributes.vertices[3 * index.vertex_index + 1],
+				attributes.vertices[3 * index.vertex_index + 2]
+			};
+
+			vertex.tex_coord = {
+				attributes.texcoords[2 * index.texcoord_index + 0],
+				1.0f - attributes.texcoords[2 * index.texcoord_index + 1]
+			};
+
+			if (unique_vertices.count(vertex) == 0) {
+				unique_vertices[vertex] = gsl::narrow<uint>(m_scene.vertices.size());
+				m_scene.vertices.push_back(vertex);
+			}
+
+			m_scene.indices.push_back(unique_vertices[vertex]);
+		}
+	}
 }
 
 auto Renderer::createTextureSampler() -> void {
@@ -1881,7 +1935,7 @@ auto Renderer::createVertexBuffer() -> void {
 			std::unique(queue_family_indices.begin(), queue_family_indices.end()),
 			queue_family_indices.end());
 
-		auto buffer_size = VkDeviceSize{ gsl::narrow_cast<size_t>(sizeof(vertices[0]))*vertices.size() };
+		auto buffer_size = VkDeviceSize{ gsl::narrow_cast<size_t>(sizeof(m_scene.vertices[0]))*m_scene.vertices.size() };
 
 		auto staging_buffer = AllocatedBuffer{};
 		createBuffer(
@@ -1898,7 +1952,7 @@ auto Renderer::createVertexBuffer() -> void {
 			nullptr);
 
 	#ifdef VMA_USE_ALLOCATOR
-		memcpy(staging_buffer.allocation_info.pMappedData, vertices.data(), gsl::narrow_cast<size_t>(buffer_size));
+		memcpy(staging_buffer.allocation_info.pMappedData, m_scene.vertices.data(), gsl::narrow_cast<size_t>(buffer_size));
 	#else
 		void *data;
 		vkMapMemory(m_device, staging_buffer.memory, 0, buffer_size, 0, &data);
@@ -1947,7 +2001,7 @@ auto Renderer::createIndexBuffer() -> void {
 			std::unique(queue_family_indices.begin(), queue_family_indices.end()),
 			queue_family_indices.end());
 
-		auto buffer_size = VkDeviceSize{ gsl::narrow_cast<size_t>(sizeof(indices[0]))*indices.size() };
+		auto buffer_size = VkDeviceSize{ gsl::narrow_cast<size_t>(sizeof(m_scene.indices[0]))*m_scene.indices.size() };
 
 		auto staging_buffer = AllocatedBuffer{};
 		createBuffer(
@@ -1964,7 +2018,7 @@ auto Renderer::createIndexBuffer() -> void {
 			nullptr);
 
 	#ifdef VMA_USE_ALLOCATOR
-		memcpy(staging_buffer.allocation_info.pMappedData, indices.data(), gsl::narrow_cast<size_t>(buffer_size));
+		memcpy(staging_buffer.allocation_info.pMappedData, m_scene.indices.data(), gsl::narrow_cast<size_t>(buffer_size));
 	#else
 		void *data;
 		vkMapMemory(m_device, staging_buffer.memory, 0, buffer_size, 0, &data);
@@ -2012,7 +2066,7 @@ auto Renderer::createUniformBuffer() -> void {
 		m_uniform_buffer,
 		VK_SHARING_MODE_EXCLUSIVE,
 		nullptr);
-	}
+}
 
 	std::cout << "\tUniform Buffer Created" << std::endl << std::endl;
 }
@@ -2076,7 +2130,7 @@ auto Renderer::createDescriptorSet() -> void {
 
 	auto image_info = VkDescriptorImageInfo{};
 	image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-	image_info.imageView = m_texture_image_view;
+	image_info.imageView = m_scene.m_texture_image_view;
 	image_info.sampler = m_texture_sampler;
 
 	auto descriptor_writes = std::array<VkWriteDescriptorSet, 2>{};
@@ -2159,7 +2213,7 @@ auto Renderer::findMemoryType(uint type_bits, VkMemoryPropertyFlags properties, 
 	for (uint32_t i = 0; i < memory_properties.memoryTypeCount; i++)
 	{
 		if ((type_bits & 1) == 1)
-		[[gsl::suppress(bounds.2)]]
+			[[gsl::suppress(bounds.2)]]
 		{
 			if ((memory_properties.memoryTypes[i].propertyFlags & properties) == properties)
 			{
@@ -2288,7 +2342,7 @@ auto Renderer::recordCommandBuffers() -> void {
 			vkCmdBindVertexBuffers(m_command_buffers[i], 0, 1, vertex_buffers, offsets);
 			}
 
-			vkCmdBindIndexBuffer(m_command_buffers[i], m_index_buffer.buffer, 0, VK_INDEX_TYPE_UINT16);
+			vkCmdBindIndexBuffer(m_command_buffers[i], m_index_buffer.buffer, 0, VK_INDEX_TYPE_UINT32);
 
 			vkCmdBindDescriptorSets(
 				m_command_buffers[i],
@@ -2300,7 +2354,7 @@ auto Renderer::recordCommandBuffers() -> void {
 				0,
 				nullptr);
 
-			vkCmdDrawIndexed(m_command_buffers[i], gsl::narrow<uint>(indices.size()), 1, 0, 0, 0);
+			vkCmdDrawIndexed(m_command_buffers[i], gsl::narrow<uint>(m_scene.indices.size()), 1, 0, 0, 0);
 		}
 
 		vkCmdEndRenderPass(m_command_buffers[i]);
@@ -2360,7 +2414,7 @@ auto Renderer::createSemaphoresAndFences() -> void {
 }
 
 
-auto Renderer::updateUniformBuffer() ->void {
+auto Renderer::updateRotateTestUniformBuffer() ->void {
 
 	static auto start_time = std::chrono::high_resolution_clock::now();
 
@@ -2374,15 +2428,17 @@ auto Renderer::updateUniformBuffer() ->void {
 
 	ubo.model = glm::rotate(glm::mat4(1.0f), time* glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
 	ubo.view = glm::lookAt(
-		glm::vec3(0.0f, 1.0f, 2.0f),
-		glm::vec3(0.0f, 0.0f, 0.0f),
+		glm::vec3(1.0f, 0.2f, 1.2f),
+		glm::vec3(0.0f, 0.0f, 0.5f),
 		glm::vec3(0.0f, 0.0f, 1.0f));
 	ubo.proj = glm::perspective(
 		glm::radians(45.0f),
 		m_swap_chain_extent.width / gsl::narrow_cast<float>(m_swap_chain_extent.height),
 		0.1f,
 		10.0f);
-	ubo.proj[1][1] = -1; // We compensate for the inverted Y axis in GLM (meant for OpenGL)
+	ubo.proj[1][1] *= -1; // We compensate for the inverted Y axis in GLM (meant for OpenGL)
+
+	
 
 #ifdef VMA_USE_ALLOCATOR
 	memcpy(m_uniform_buffer.allocation_info.pMappedData, &ubo, sizeof(ubo));
