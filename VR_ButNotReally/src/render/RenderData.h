@@ -15,7 +15,7 @@
 
 
 struct Vertex {
-	glm::vec2 pos{};
+	glm::vec3 pos{};
 	glm::vec3 color{};
 	glm::vec2 tex_coord{};
 
@@ -36,7 +36,7 @@ struct Vertex {
 
 		attribute_descriptions[0].binding = 0;
 		attribute_descriptions[0].location = 0;
-		attribute_descriptions[0].format = VK_FORMAT_R32G32_SFLOAT;
+		attribute_descriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
 		attribute_descriptions[0].offset = offsetof(Vertex, pos);
 
 		attribute_descriptions[1].binding = 0;
@@ -71,14 +71,20 @@ struct UniformBufferObject {
 #include <CppCoreCheck/Warnings.h>
 #pragma warning(disable: 26426)
 const auto vertices = std::vector<Vertex>{
-	{ { -0.5f, -0.5f },{ 1.0f, 0.0f, 0.0f }, { 1.0f, 0.0f} },
-	{ {  0.5f, -0.5f },{ 0.0f, 1.0f, 0.0f }, { 0.0f, 0.0f } },
-	{ {  0.5f,  0.5f },{ 0.0f, 0.0f, 1.0f }, { 0.0f, 1.0f } },
-	{ { -0.5f,  0.5f },{ 1.0f, 1.0f, 1.0f }, { 1.0f, 1.0f } },
+	{ { -0.5f, -0.5f, 0.0f },{ 1.0f, 0.0f, 0.0f }, { 1.0f, 0.0f} },
+	{ {  0.5f, -0.5f, 0.0f },{ 0.0f, 1.0f, 0.0f }, { 0.0f, 0.0f } },
+	{ {  0.5f,  0.5f, 0.0f },{ 0.0f, 0.0f, 1.0f }, { 0.0f, 1.0f } },
+	{ { -0.5f,  0.5f, 0.0f },{ 1.0f, 1.0f, 1.0f }, { 1.0f, 1.0f } },
+
+	{ { -0.5f, -0.5f, -0.5f },{ 1.0f, 0.0f, 0.0f },{ 1.0f, 0.0f } },
+	{ {  0.5f, -0.5f, -0.5f },{ 0.0f, 1.0f, 0.0f },{ 0.0f, 0.0f } },
+	{ {  0.5f,  0.5f, -0.5f },{ 0.0f, 0.0f, 1.0f },{ 0.0f, 1.0f } },
+	{ { -0.5f,  0.5f, -0.5f },{ 1.0f, 1.0f, 1.0f },{ 1.0f, 1.0f } },
 };
 
 const auto indices = std::vector<uint16_t>{
-	0, 1, 2, 2, 3, 0
+	0, 1, 2, 2, 3, 0,
+	4, 5, 6, 6, 7, 4
 };
 #pragma warning(pop)
 

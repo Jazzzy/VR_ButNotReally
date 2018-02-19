@@ -87,7 +87,7 @@ struct AllocatedImage {
 
 
 /**
-Wrapps a Vulkan Command Buffer with relevant
+Wraps a Vulkan Command Buffer with relevant
 type and state information tied to it
 */
 struct WrappedCommandBuffer {
@@ -96,12 +96,22 @@ struct WrappedCommandBuffer {
 	bool recording{ false };
 };
 
+/**
+Wraps a Vulkan Render Target with all the relevant information to
+render to it like the image, memory, view, width, heigth and if it has
+been initializated.
+
+We are not using an "AllocatedImage" because allocation of a render target
+is done with a custom method because of the special requirements of it being
+a render target.
+*/
 struct WrappedRenderTarget {
 	VkImage image{};
 	VkDeviceMemory memory{};
 	VkImageView view{};
 	uint width{};
 	uint heigth{};
+	bool init{ false };
 };
 
 /**
@@ -333,7 +343,9 @@ private:
 	@return a tuple with a bool representing that is true when the device is valid
 	and an int representing the score, the higher the better.
 	*/
-	auto physicalDeviceSuitability(const VkPhysicalDevice& device) const noexcept->std::tuple<bool, int>;
+	auto physicalDeviceSuitability(
+		const VkPhysicalDevice& device
+	) const noexcept->std::tuple<bool, int>;
 
 	/**
 	Checks the queue families supported by the provided device and returns the indices for the
@@ -346,7 +358,10 @@ private:
 	@param The print options for the function to indicate the output desired to standard output
 	@return The struct with the family queue indices required or -1 if they haven't been found
 	*/
-	auto findQueueFamilies(const VkPhysicalDevice& physical_device, PrintOptions print_options) const->QueueFamilyIndices;
+	auto findQueueFamilies(
+		const VkPhysicalDevice& physical_device,
+		PrintOptions print_options
+	) const->QueueFamilyIndices;
 
 	/**
 	Creates the vulkan logical device we are going to use and retrieves the graphics and present
@@ -371,8 +386,11 @@ private:
 	@param The physical device to check for extension support
 	@return true if all the extensions are supported, false otherwise
 	*/
-	[[gsl::suppress(bounds.3)]] auto checkDeviceExtensionSupport(const VkPhysicalDevice& device) const -> bool;
-	
+	[[gsl::suppress(bounds.3)]]
+	auto checkDeviceExtensionSupport(
+		const VkPhysicalDevice& device
+	) const -> bool;
+
 	/**
 	Checks and retrieves information about the swap chain capabilities of a physical device.
 	Fills up said information in the SwapChainSupportDetails struct
@@ -381,7 +399,9 @@ private:
 	@param The physical device to check for swap chain support
 	@return A SwapChainSupportDetails filled with swap chain support information
 	*/
-	auto querySwapChainSupport(const VkPhysicalDevice& device) const->SwapChainSupportDetails;
+	auto querySwapChainSupport(
+		const VkPhysicalDevice& device
+	) const->SwapChainSupportDetails;
 
 	/**
 	Checks and returns the best available surface chain format from the provided ones
@@ -390,7 +410,9 @@ private:
 	@param A vector with the surface formats to check
 	@return The best surface format for our application
 	*/
-	auto pickSurfaceChainFormat(const std::vector<VkSurfaceFormatKHR>& available_formats) const->VkSurfaceFormatKHR;
+	auto pickSurfaceChainFormat(
+		const std::vector<VkSurfaceFormatKHR>& available_formats
+	) const->VkSurfaceFormatKHR;
 
 	/**
 	Checks and returns the best available present mode from the provided ones
@@ -399,7 +421,9 @@ private:
 	@param A vector with the present modes to check
 	@return The best present mode for our application
 	*/
-	auto pickSurfacePresentMode(const std::vector<VkPresentModeKHR>& available_modes)  const noexcept->VkPresentModeKHR;
+	auto pickSurfacePresentMode(
+		const std::vector<VkPresentModeKHR>& available_modes
+	)  const noexcept->VkPresentModeKHR;
 
 	/**
 	Checks and returns the best available extent for the images in the
@@ -408,7 +432,9 @@ private:
 	@param The capabilities of the surface
 	@return The best possible extent (width, height) for our application
 	*/
-	auto pickSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities)  const noexcept->VkExtent2D;
+	auto pickSwapExtent(
+		const VkSurfaceCapabilitiesKHR& capabilities
+	)  const noexcept->VkExtent2D;
 
 	/**
 	Creates the vulkan swap chain required for rendering.
@@ -495,6 +521,9 @@ private:
 	@param Usage type for allocation
 	@param Flags necessary for allocation
 	@param The image to be populated
+	@param The sharing mode for the image (Concurrent or exclusive)
+	@param The family indices when sharing mode is concurrent (or nullptr otherwise)
+	@param The sample count for the image, 1 sample by default (used on images meant for multisampling)
 	*/
 	auto createImage(
 		uint width,
@@ -507,7 +536,8 @@ private:
 		AllocatedImage& image,
 		VkSharingMode sharing_mode,
 		const std::vector<uint>* queue_family_indices,
-		short samples = 1) -> void;
+		short samples = 1
+	) -> void;
 
 	/**
 	Destroys the image provided and frees its memory
@@ -515,6 +545,15 @@ private:
 	@param The image to destroy
 	*/
 	auto destroyImage(AllocatedImage& image) noexcept -> void;
+
+	/**
+	Creates the necessary resources for the implementation
+	of a depth buffer
+
+	@ m_depth_image
+	@ m_depth_image_view
+	*/
+	auto createDepthResources() -> void;
 
 	/**
 	Creates a texture image with the data loaded from a file
@@ -560,7 +599,8 @@ private:
 #endif
 		AllocatedBuffer& allocated_buffer,
 		VkSharingMode sharing_mode,
-		const std::vector<uint>* queue_family_indices) -> void;
+		const std::vector<uint>* queue_family_indices
+	) -> void;
 
 	/**
 	Destroys the buffer provided and frees its memory
@@ -609,13 +649,48 @@ private:
 	auto createDescriptorSet() -> void;
 
 	/**
-	Calculates the required memory types given the input properties.
+	Helper function that finds the appropriate format for a depth attachment.
 
-	@param Flags that indicate the types of memories that we can consider.
+	@return Format that supports usage as a depth attachment
+	*/
+	auto findDepthFormat()->VkFormat;
+
+	/**
+	Checks if a given format has a stencil component in it.
+
+	@param The format to check
+	@return True if it has a stencil component, false otherwise
+	*/
+	auto hasStencilComponent(VkFormat format) const noexcept -> bool;
+
+	/**
+	Helper function that finds the post appropriate format for an image given
+	the desired features and candidates.
+
+	@param The possible formats to choose from
+	@param The tiling options of the image
+	@param The features desired
+	@return The most appropriate format
+	*/
+	auto findSupportedFormat(
+		const std::vector<VkFormat>& candidates,
+		VkImageTiling tiling,
+		VkFormatFeatureFlags features
+	)->VkFormat;
+
+	/**
+	Helper function that calculates the required memory types given the input properties.
+
+	@param Flags that indicate the types of memories that we can consider
 	@param Properties of the memory we need
+	@param A reference to a boolean that will indicate if we have found an appropriate type
 	@return Appropriate flags of the memory we can use.
 	*/
-	auto findMemoryType(uint type_filter, VkMemoryPropertyFlags properties, VkBool32 *memTypeFound)->uint;
+	auto findMemoryType(
+		uint type_filter,
+		VkMemoryPropertyFlags properties,
+		VkBool32 *found = nullptr
+	)->uint;
 
 	/**
 	Copies the contents from one VkBuffer to another.
@@ -624,7 +699,11 @@ private:
 	@param The destination buffer
 	@param The size of the memory to be copied
 	*/
-	auto copyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size) noexcept -> void;
+	auto copyBuffer(
+		VkBuffer src,
+		VkBuffer dst,
+		VkDeviceSize size
+	) noexcept -> void;
 
 	/**
 	Creates the command buffers that contain the commands to
@@ -660,7 +739,10 @@ private:
 	@param New width of the window
 	@param New height of the window
 	*/
-	auto static onWindowsResized(GLFWwindow * window, int width, int heigth) -> void;
+	auto static onWindowsResized(
+		GLFWwindow * window,
+		int width,
+		int heigth) -> void;
 
 	/**
 	Creates a single use command buffer and starts recording to it
@@ -668,7 +750,9 @@ private:
 	@param the type of commands that will be used (graphics also allows transfer)
 	@return The command buffer we are recording to
 	*/
-	auto beginSingleTimeCommands(CommandType command_type = CommandType::graphics) noexcept->WrappedCommandBuffer;
+	auto beginSingleTimeCommands(
+		CommandType command_type = CommandType::graphics
+	) noexcept->WrappedCommandBuffer;
 
 	/**
 	End recording to a particulaar command buffer and submits it to the queue
@@ -676,7 +760,8 @@ private:
 	@param The command buffer to submit to the queue
 	*/
 	auto endSingleTimeCommands(
-		WrappedCommandBuffer& command_buffer) noexcept ->void;
+		WrappedCommandBuffer& command_buffer
+	) noexcept ->void;
 
 	/**
 	Helper function that changes the image layout to a new one
@@ -713,9 +798,14 @@ private:
 
 	@param The image to create a view from
 	@param The format of the view
+	@param The aspect mast to create the image view regarding its use
 	@return An image view into the provided image
 	*/
-	auto createImageView(VkImage image, VkFormat format)->VkImageView;
+	auto createImageView(
+		VkImage image,
+		VkFormat format,
+		VkImageAspectFlags aspect_flags
+	)->VkImageView;
 
 	/**
 	Helper function that calculates the required flags to
@@ -729,16 +819,21 @@ private:
 	/**
 	Creates a render target for multisampling. This includes, the image,
 	its memory and a view to it.
-	
+
 	@param Width of the render target
 	@param Height of the render target
 	@param Desired format of the render target
+	@param The usage flags for the render target
+	@param The aspect flags for the image view of the render target
 	@return The render target struct with all the relevant info
 	*/
 	auto createMultisampleRenderTarget(
 		uint width,
 		uint height,
-		VkFormat format)->WrappedRenderTarget;
+		VkFormat format,
+		VkImageUsageFlags usage,
+		VkImageAspectFlags aspect_mask)->WrappedRenderTarget;
+
 
 	/* ---------------------------------------------------------------------------------------------- */
 	/* ---------------------------------------- DATA MEMBERS ---------------------------------------- */
@@ -776,6 +871,10 @@ private:
 
 	WrappedRenderTarget m_render_target{};
 
+	WrappedRenderTarget m_depth_target{};
+
+	VkFormat m_depth_format{};
+
 	VkSwapchainKHR m_swap_chain{};
 
 	uint m_current_swapchain_buffer{};
@@ -807,6 +906,10 @@ private:
 	AllocatedBuffer m_index_buffer{};
 
 	AllocatedBuffer m_uniform_buffer{};
+
+	AllocatedImage m_depth_image{};
+
+	VkImageView m_depth_image_view{};
 
 	AllocatedImage m_texture_image{};
 

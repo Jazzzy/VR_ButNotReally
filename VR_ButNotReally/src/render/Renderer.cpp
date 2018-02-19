@@ -29,6 +29,7 @@ Include section without warnings from GSL
 #endif
 
 #define GLM_FORCE_RADIANS
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -86,9 +87,10 @@ auto Renderer::initVulkan() noexcept(false) -> void {
 	createRenderPass();
 	createDescriptorSetLayout();
 	createGraphicsPipeline();
-	createFramebuffers();
 	createGraphicsCommandPool();
 	createTransferCommandPool();
+	createDepthResources();
+	createFramebuffers();
 	createTextureImage();
 	createTextureImageView();
 	createTextureSampler();
@@ -126,6 +128,7 @@ auto Renderer::recreateSwapChain() -> void {
 	createSwapChainImageViews();
 	createRenderPass();
 	createGraphicsPipeline();
+	createDepthResources();
 	createFramebuffers();
 	createCommandBuffers();
 	recordCommandBuffers();
@@ -189,6 +192,9 @@ auto Renderer::cleanup() noexcept -> void {
 
 auto Renderer::cleanupSwapChain() noexcept -> void {
 
+	vkDestroyImageView(m_device, m_depth_image_view, nullptr);
+	destroyImage(m_depth_image);
+
 	for (const auto& framebuffer : m_swap_chain_framebuffers) {
 		vkDestroyFramebuffer(m_device, framebuffer, nullptr);
 	}
@@ -210,10 +216,16 @@ auto Renderer::cleanupSwapChain() noexcept -> void {
 
 	vkDestroySwapchainKHR(m_device, m_swap_chain, nullptr);
 
-	if (config.multisampling_samples != 1) {
+	if (m_render_target.init) {
 		vkDestroyImageView(m_device, m_render_target.view, nullptr);
 		vkDestroyImage(m_device, m_render_target.image, nullptr);
 		vkFreeMemory(m_device, m_render_target.memory, nullptr);
+	}
+
+	if (m_depth_target.init) {
+		vkDestroyImageView(m_device, m_depth_target.view, nullptr);
+		vkDestroyImage(m_device, m_depth_target.image, nullptr);
+		vkFreeMemory(m_device, m_depth_target.memory, nullptr);
 	}
 
 }
@@ -880,7 +892,19 @@ auto Renderer::createSwapChain() -> void {
 		}
 
 	if (config.multisampling_samples != 1) {
-		m_render_target = createMultisampleRenderTarget(extent.width, extent.height, surface_format.format);
+		m_render_target = createMultisampleRenderTarget(
+			extent.width,
+			extent.height,
+			surface_format.format,
+			VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+			VK_IMAGE_ASPECT_COLOR_BIT);
+
+		m_depth_target = createMultisampleRenderTarget(
+			extent.width,
+			extent.height,
+			findDepthFormat(),
+			VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+			VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT);
 	}
 
 	std::cout << "Number of images required in Swap Chain: " << image_count << std::endl << std::endl;
@@ -970,7 +994,10 @@ auto Renderer::createSwapChainImageViews() -> void {
 	m_swap_chain_image_views.resize(m_swap_chain_images.size());
 
 	for (size_t i = 0; i < m_swap_chain_image_views.size(); i++) {
-		m_swap_chain_image_views[i] = createImageView(m_swap_chain_images[i], m_swap_chain_image_format);
+		m_swap_chain_image_views[i] = createImageView(
+			m_swap_chain_images[i],
+			m_swap_chain_image_format,
+			VK_IMAGE_ASPECT_COLOR_BIT);
 	}
 
 	std::cout << "\tImage Views Created" << std::endl << std::endl;
@@ -980,12 +1007,10 @@ auto Renderer::createRenderPass() -> void {
 
 	std::cout << "Creating Render Pass" << std::endl;
 
-
-
 	if (config.multisampling_samples == 1) {
 
 		auto render_pass_create_info = VkRenderPassCreateInfo{};
-		auto attachment_descriptions = std::vector<VkAttachmentDescription>(1);
+		auto attachment_descriptions = std::array<VkAttachmentDescription, 2>{};
 
 		attachment_descriptions[0].format = m_swap_chain_image_format;
 		attachment_descriptions[0].samples = VK_SAMPLE_COUNT_1_BIT;
@@ -996,14 +1021,28 @@ auto Renderer::createRenderPass() -> void {
 		attachment_descriptions[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 		attachment_descriptions[0].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
+		attachment_descriptions[1].format = findDepthFormat();
+		attachment_descriptions[1].samples = VK_SAMPLE_COUNT_1_BIT;
+		attachment_descriptions[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		attachment_descriptions[1].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		attachment_descriptions[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		attachment_descriptions[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		attachment_descriptions[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		attachment_descriptions[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
 		auto color_attachment_reference = VkAttachmentReference{};
 		color_attachment_reference.attachment = 0;
 		color_attachment_reference.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+		auto depth_attachment_reference = VkAttachmentReference{};
+		depth_attachment_reference.attachment = 1;
+		depth_attachment_reference.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
 		auto subpass_description = VkSubpassDescription{};
 		subpass_description.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
 		subpass_description.colorAttachmentCount = 1;
 		subpass_description.pColorAttachments = &color_attachment_reference;
+		subpass_description.pDepthStencilAttachment = &depth_attachment_reference;
 
 		auto subpass_dependency = VkSubpassDependency{};
 		subpass_dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
@@ -1016,8 +1055,8 @@ auto Renderer::createRenderPass() -> void {
 			VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
 		render_pass_create_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-		render_pass_create_info.attachmentCount = 1;
-		render_pass_create_info.pAttachments = &attachment_descriptions[0];
+		render_pass_create_info.attachmentCount = gsl::narrow_cast<uint>(attachment_descriptions.size());
+		render_pass_create_info.pAttachments = attachment_descriptions.data();
 		render_pass_create_info.subpassCount = 1;
 		render_pass_create_info.pSubpasses = &subpass_description;
 		render_pass_create_info.dependencyCount = 1;
@@ -1028,7 +1067,7 @@ auto Renderer::createRenderPass() -> void {
 		}
 	}
 	else {
-		auto attachment_descriptions = std::array<VkAttachmentDescription, 2>{};
+		auto attachment_descriptions = std::array<VkAttachmentDescription, 4>{};
 
 
 		/*
@@ -1061,7 +1100,32 @@ auto Renderer::createRenderPass() -> void {
 		attachment_descriptions[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 		attachment_descriptions[1].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
+		/*
+		Multisampled depth attachment
+		*/
+		attachment_descriptions[2].format = findDepthFormat();
+		attachment_descriptions[2].samples = getSampleBits(config.multisampling_samples);
+		attachment_descriptions[2].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		attachment_descriptions[2].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		attachment_descriptions[2].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		attachment_descriptions[2].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		attachment_descriptions[2].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		attachment_descriptions[2].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+		/*
+		FrameBuffer we resolve the multisampled image to
+		*/
+		attachment_descriptions[3].format = findDepthFormat();
+		attachment_descriptions[3].samples = VK_SAMPLE_COUNT_1_BIT;
+		attachment_descriptions[3].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		attachment_descriptions[3].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		attachment_descriptions[3].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		attachment_descriptions[3].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		attachment_descriptions[3].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		attachment_descriptions[3].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
 		const auto color_attachment_reference = VkAttachmentReference{ 0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL };
+		const auto depth_attachment_reference = VkAttachmentReference{ 2, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL };
 		const auto resolve_attachment_reference = VkAttachmentReference{ 1, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL };
 
 
@@ -1070,15 +1134,26 @@ auto Renderer::createRenderPass() -> void {
 		subpass_description.colorAttachmentCount = 1;
 		subpass_description.pColorAttachments = &color_attachment_reference;
 		subpass_description.pResolveAttachments = &resolve_attachment_reference;
+		subpass_description.pDepthStencilAttachment = &depth_attachment_reference;
 
 
-		auto subpass_dependency = VkSubpassDependency{ 0 };
-		subpass_dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-		subpass_dependency.dstSubpass = 0;
-		subpass_dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-		subpass_dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-		subpass_dependency.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-		subpass_dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
+		auto subpass_dependencies = std::array<VkSubpassDependency, 2>{};
+		subpass_dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+		subpass_dependencies[0].dstSubpass = 0;
+		subpass_dependencies[0].srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+		subpass_dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		subpass_dependencies[0].srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+		subpass_dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
+		subpass_dependencies[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+		subpass_dependencies[1].srcSubpass = 0;
+		subpass_dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
+		subpass_dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		subpass_dependencies[1].dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+		subpass_dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
+		subpass_dependencies[1].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+		subpass_dependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
 
 		auto render_pass_create_info = VkRenderPassCreateInfo{};
 		render_pass_create_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
@@ -1086,8 +1161,8 @@ auto Renderer::createRenderPass() -> void {
 		render_pass_create_info.pAttachments = attachment_descriptions.data();
 		render_pass_create_info.subpassCount = 1;
 		render_pass_create_info.pSubpasses = &subpass_description;
-		render_pass_create_info.dependencyCount = 1;
-		render_pass_create_info.pDependencies = &subpass_dependency;
+		render_pass_create_info.dependencyCount = gsl::narrow_cast<uint>(subpass_dependencies.size());
+		render_pass_create_info.pDependencies = subpass_dependencies.data();
 
 		if (vkCreateRenderPass(m_device, &render_pass_create_info, nullptr, &m_render_pass) != VK_SUCCESS) {
 			throw std::runtime_error("We could't create a render pass");
@@ -1265,6 +1340,17 @@ auto Renderer::createGraphicsPipeline() -> void {
 	color_blend_create_info.blendConstants[2] = 0.0f;
 	color_blend_create_info.blendConstants[3] = 0.0f;
 
+	auto depth_stencil_create_info = VkPipelineDepthStencilStateCreateInfo{};
+	depth_stencil_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+	depth_stencil_create_info.depthTestEnable = VK_TRUE;
+	depth_stencil_create_info.depthWriteEnable = VK_TRUE;
+	depth_stencil_create_info.depthCompareOp = VK_COMPARE_OP_LESS;
+	depth_stencil_create_info.depthBoundsTestEnable = VK_FALSE;
+	depth_stencil_create_info.minDepthBounds = 0.0f;
+	depth_stencil_create_info.maxDepthBounds = 1.0f;
+	depth_stencil_create_info.stencilTestEnable = VK_FALSE; //@NOTE: VK_TRUE Only if we have stencil available
+	depth_stencil_create_info.front = {};
+	depth_stencil_create_info.back = {};
 
 	const VkDynamicState dynamic_states[] = {
 		VK_DYNAMIC_STATE_VIEWPORT,
@@ -1303,7 +1389,7 @@ auto Renderer::createGraphicsPipeline() -> void {
 	pipeline_create_info.pViewportState = &viewport_create_info;
 	pipeline_create_info.pRasterizationState = &rasterizer_create_info;
 	pipeline_create_info.pMultisampleState = &multisampling_create_info;
-	pipeline_create_info.pDepthStencilState = nullptr;
+	pipeline_create_info.pDepthStencilState = &depth_stencil_create_info;
 	pipeline_create_info.pColorBlendState = &color_blend_create_info;
 	pipeline_create_info.pDynamicState = nullptr;
 	pipeline_create_info.layout = m_pipeline_layout;
@@ -1353,14 +1439,16 @@ auto Renderer::createFramebuffers() ->  void {
 		auto attachments = std::vector<VkImageView>{};
 
 		if (config.multisampling_samples == 1) {
-			attachments.resize(1);
+			attachments.resize(2);
 			attachments[0] = m_swap_chain_image_views[i];
-			std::vector<VkImageView> attachments = { m_swap_chain_image_views[i] };
+			attachments[1] = m_depth_image_view;
 		}
 		else {
-			attachments.resize(2);
+			attachments.resize(4);
 			attachments[0] = m_render_target.view;
 			attachments[1] = m_swap_chain_image_views[i];
+			attachments[2] = m_depth_target.view;
+			attachments[3] = m_depth_image_view;
 		}
 
 
@@ -1385,8 +1473,6 @@ auto Renderer::createFramebuffers() ->  void {
 	}
 
 	std::cout << "\tFramebuffers Created" << std::endl << std::endl;
-
-
 }
 
 auto Renderer::createGraphicsCommandPool() ->  void {
@@ -1491,9 +1577,9 @@ auto Renderer::createImage(
 			m_vma_allocator,
 			&create_info,
 			&vma_create_info,
-			&m_texture_image.image,
-			&m_texture_image.allocation,
-			&m_texture_image.allocation_info) != VK_SUCCESS) {
+			&image.image,
+			&image.allocation,
+			&image.allocation_info) != VK_SUCCESS) {
 			throw std::runtime_error("We couldn't create a vulkan image to hold the texture image");
 		}
 	}
@@ -1502,6 +1588,36 @@ auto Renderer::createImage(
 
 auto Renderer::destroyImage(AllocatedImage& image) noexcept -> void {
 	vmaDestroyImage(m_vma_allocator, image.image, image.allocation);
+}
+
+auto Renderer::createDepthResources() -> void {
+
+	const auto depth_format = findDepthFormat();
+
+	createImage(
+		m_swap_chain_extent.width,
+		m_swap_chain_extent.height,
+		depth_format,
+		VK_IMAGE_TILING_OPTIMAL,
+		VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+		VMA_MEMORY_USAGE_GPU_ONLY,
+		0,
+		m_depth_image,
+		VK_SHARING_MODE_EXCLUSIVE,
+		nullptr);
+
+	m_depth_image_view = createImageView(
+		m_depth_image.image,
+		depth_format,
+		VK_IMAGE_ASPECT_DEPTH_BIT);
+
+
+	changeImageLayout(
+		m_depth_image.image,
+		depth_format,
+		VK_IMAGE_LAYOUT_UNDEFINED,
+		VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+
 }
 
 auto Renderer::createTextureImage() -> void {
@@ -1605,7 +1721,10 @@ auto Renderer::createTextureImage() -> void {
 auto Renderer::createTextureImageView() -> void {
 	std::cout << "Creating Texture Image View " << std::endl;
 
-	m_texture_image_view = createImageView(m_texture_image.image, VK_FORMAT_R8G8B8A8_UNORM);
+	m_texture_image_view = createImageView(
+		m_texture_image.image,
+		VK_FORMAT_R8G8B8A8_UNORM,
+		VK_IMAGE_ASPECT_COLOR_BIT);
 
 	std::cout << "\tTexture Image View Created" << std::endl << std::endl;
 }
@@ -1994,7 +2113,44 @@ auto Renderer::createDescriptorSet() -> void {
 	std::cout << "\tDescriptor Set Created" << std::endl << std::endl;
 }
 
-auto Renderer::findMemoryType(uint type_bits, VkMemoryPropertyFlags properties, VkBool32 *memTypeFound = nullptr)->uint {
+auto Renderer::findDepthFormat() -> VkFormat {
+
+	if (m_depth_format == VK_FORMAT_UNDEFINED) {
+		m_depth_format = findSupportedFormat(
+			{
+				VK_FORMAT_D32_SFLOAT_S8_UINT,
+				VK_FORMAT_D24_UNORM_S8_UINT
+				/* Because we want stencil we remove[,VK_FORMAT_D32_SFLOAT]*/ },
+			VK_IMAGE_TILING_OPTIMAL,
+			VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
+	}
+	return m_depth_format;
+}
+
+auto  Renderer::hasStencilComponent(VkFormat format) const noexcept -> bool {
+	return (format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT);
+}
+
+auto Renderer::findSupportedFormat(
+	const std::vector<VkFormat>& candidates,
+	VkImageTiling tiling,
+	VkFormatFeatureFlags features)->VkFormat {
+
+	for (auto& format : candidates) {
+		auto properties = VkFormatProperties{};
+		vkGetPhysicalDeviceFormatProperties(m_physical_device, format, &properties);
+		if (tiling == VK_IMAGE_TILING_LINEAR && ((properties.linearTilingFeatures & features) == features)) {
+			return format;
+		}
+		else if (tiling == VK_IMAGE_TILING_OPTIMAL && ((properties.optimalTilingFeatures & features) == features)) {
+			return format;
+		}
+	}
+
+	throw std::runtime_error("We couldn't find an appropriate format");
+}
+
+auto Renderer::findMemoryType(uint type_bits, VkMemoryPropertyFlags properties, VkBool32 *found)->uint {
 
 	auto memory_properties = VkPhysicalDeviceMemoryProperties{};
 	vkGetPhysicalDeviceMemoryProperties(m_physical_device, &memory_properties);
@@ -2003,12 +2159,13 @@ auto Renderer::findMemoryType(uint type_bits, VkMemoryPropertyFlags properties, 
 	for (uint32_t i = 0; i < memory_properties.memoryTypeCount; i++)
 	{
 		if ((type_bits & 1) == 1)
+		[[gsl::suppress(bounds.2)]]
 		{
 			if ((memory_properties.memoryTypes[i].propertyFlags & properties) == properties)
 			{
-				if (memTypeFound)
+				if (found)
 				{
-					*memTypeFound = true;
+					*found = true;
 				}
 				return i;
 			}
@@ -2016,9 +2173,9 @@ auto Renderer::findMemoryType(uint type_bits, VkMemoryPropertyFlags properties, 
 		type_bits >>= 1;
 	}
 
-	if (memTypeFound)
+	if (found)
 	{
-		*memTypeFound = false;
+		*found = false;
 		return 0;
 	}
 	else
@@ -2094,21 +2251,29 @@ auto Renderer::recordCommandBuffers() -> void {
 		@see m_current_swapchain_buffer
 		*/
 
-		VkClearValue clear_values[] = { config::clear_color , config::clear_color , config::clear_color };
+		std::array<VkClearValue, 3> clear_values = { config::clear_color , config::clear_color , config::clear_color };
 
 		if (config.multisampling_samples == 1) {
-			render_info.framebuffer = m_swap_chain_framebuffers[i];
-			render_info.renderArea.offset = { 0, 0 };
-			render_info.renderArea.extent = m_swap_chain_extent;
-			render_info.clearValueCount = 1;
-			render_info.pClearValues = clear_values;
-		}
-		else {
+
+			clear_values[0].color = { 0.0f,0.0f,0.0f,0.0f };
+			clear_values[1].depthStencil = { 1.0f, 0 };
+
 			render_info.framebuffer = m_swap_chain_framebuffers[i];
 			render_info.renderArea.offset = { 0, 0 };
 			render_info.renderArea.extent = m_swap_chain_extent;
 			render_info.clearValueCount = 2;
-			render_info.pClearValues = clear_values;
+			render_info.pClearValues = clear_values.data();
+		}
+		else {
+
+			clear_values[0].color = { 0.0f,0.0f,0.0f,1.0f };
+			clear_values[1].color = { 0.0f,0.0f,0.0f,1.0f };
+			clear_values[2].depthStencil = { 1.0f, 0 };
+			render_info.framebuffer = m_swap_chain_framebuffers[i];
+			render_info.renderArea.offset = { 0, 0 };
+			render_info.renderArea.extent = m_swap_chain_extent;
+			render_info.clearValueCount = 3;
+			render_info.pClearValues = clear_values.data();
 		}
 
 		vkCmdBeginRenderPass(m_command_buffers[i], &render_info, VK_SUBPASS_CONTENTS_INLINE);
@@ -2250,7 +2415,7 @@ auto Renderer::beginFrame() -> void {
 				!= VK_SUCCESS) {
 				throw std::runtime_error("We couldn't wait for the fence involving the current command buffer");
 			}
-}
+		}
 
 		if (vkResetFences(m_device, 1, &m_command_buffer_fences[m_current_command_buffer])) {
 			throw std::runtime_error("We couldn't reset the fence involving the current command buffer");
@@ -2475,12 +2640,20 @@ auto Renderer::changeImageLayout(
 			barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 			barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 			barrier.image = image;
-			barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 			barrier.subresourceRange.baseMipLevel = 0;
 			barrier.subresourceRange.levelCount = 1;
 			barrier.subresourceRange.baseArrayLayer = 0;
 			barrier.subresourceRange.layerCount = 1;
 
+			if (new_layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
+				barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+				if (hasStencilComponent(format)) {
+					barrier.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
+				}
+			}
+			else {
+				barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			}
 
 			if (old_layout == VK_IMAGE_LAYOUT_UNDEFINED && new_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
 				barrier.srcAccessMask = 0;
@@ -2495,6 +2668,13 @@ auto Renderer::changeImageLayout(
 
 				source_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
 				destination_stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+			}
+			else if (old_layout == VK_IMAGE_LAYOUT_UNDEFINED && new_layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
+				barrier.srcAccessMask = 0;
+				barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+				source_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+				destination_stage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
 			}
 			else {
 				throw std::invalid_argument("Unsupported image layout transition");
@@ -2553,7 +2733,7 @@ auto Renderer::copyBufferToImage(
 	endSingleTimeCommands(command_buffer);
 }
 
-auto Renderer::createImageView(VkImage image, VkFormat format)->VkImageView {
+auto Renderer::createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspect_flags)->VkImageView {
 
 	auto create_info = VkImageViewCreateInfo{};
 	create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -2565,7 +2745,7 @@ auto Renderer::createImageView(VkImage image, VkFormat format)->VkImageView {
 	create_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
 	create_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
 	create_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-	create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	create_info.subresourceRange.aspectMask = aspect_flags;
 	create_info.subresourceRange.baseArrayLayer = 0;
 	create_info.subresourceRange.layerCount = 1;
 	create_info.subresourceRange.baseMipLevel = 0;
@@ -2596,7 +2776,9 @@ auto Renderer::getSampleBits(short samples)->VkSampleCountFlagBits {
 auto Renderer::createMultisampleRenderTarget(
 	uint width,
 	uint height,
-	VkFormat format)->WrappedRenderTarget {
+	VkFormat format,
+	VkImageUsageFlags usage,
+	VkImageAspectFlags aspect_mask)->WrappedRenderTarget {
 
 	auto image_create_info = VkImageCreateInfo{};
 	image_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -2610,7 +2792,7 @@ auto Renderer::createMultisampleRenderTarget(
 	image_create_info.samples = getSampleBits(config.multisampling_samples);
 	image_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	image_create_info.tiling = VK_IMAGE_TILING_OPTIMAL;
-	image_create_info.usage = VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+	image_create_info.usage = usage;
 	image_create_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
 	auto image = VkImage{};
@@ -2632,12 +2814,12 @@ auto Renderer::createMultisampleRenderTarget(
 	lazily-allocated memory and transient attachments is not
 	a thing on desktop.
 	*/
-	VkBool32 lazyMemTypePresent;
+	VkBool32 memory_type_present;
 	alloc.memoryTypeIndex = findMemoryType(
 		memory_requirements.memoryTypeBits,
 		VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT,
-		&lazyMemTypePresent);
-	if (!lazyMemTypePresent)
+		&memory_type_present);
+	if (!memory_type_present)
 	{
 		/*
 		So if LAZILY allocated memory is not available we fallback
@@ -2646,7 +2828,12 @@ auto Renderer::createMultisampleRenderTarget(
 		std::cout << "\tLazy memory not supported on the system, falling back to device local memory" << std::endl;
 		alloc.memoryTypeIndex = findMemoryType(
 			memory_requirements.memoryTypeBits,
-			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+			&memory_type_present);
+
+		if (!memory_type_present) {
+			throw std::runtime_error("We can't find an appropriate memory type for the render target");
+		}
 	}
 
 	if (vkAllocateMemory(m_device, &alloc, nullptr, &memory) != VK_SUCCESS) {
@@ -2664,7 +2851,7 @@ auto Renderer::createMultisampleRenderTarget(
 	view_create_info.components.g = VK_COMPONENT_SWIZZLE_G;
 	view_create_info.components.b = VK_COMPONENT_SWIZZLE_B;
 	view_create_info.components.a = VK_COMPONENT_SWIZZLE_A;
-	view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	view_create_info.subresourceRange.aspectMask = aspect_mask;
 	view_create_info.subresourceRange.levelCount = 1;
 	view_create_info.subresourceRange.layerCount = 1;
 
@@ -2674,5 +2861,5 @@ auto Renderer::createMultisampleRenderTarget(
 		throw std::runtime_error("We couldn't create an image view for the image for the render target");
 	}
 
-	return WrappedRenderTarget{ image, memory, view, width, height };;
+	return WrappedRenderTarget{ image, memory, view, width, height, true };;
 }
