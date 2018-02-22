@@ -16,7 +16,7 @@ int main() {
 			Renderer renderer;
 			while (!renderer.shouldClose()) {
 				glfwPollEvents();
-				renderer.updateUniformBuffer();
+				renderer.updateRotateTestUniformBuffer();
 				renderer.beginFrame();
 				renderer.endFrame();
 			}
