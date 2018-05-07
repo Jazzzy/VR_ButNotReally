@@ -5,6 +5,13 @@ This project is meant to polish a few skills of mine while learning new things
 I've never worked on before. This document will try to explain why this project
 is relevant, what it tries to achieve and how it does it.
 
+Here you can see a video of the "Tarzan Release" with 8xMSAA, OBJ loading and embedded pre-compiled shader code into the executable:
+
+Click on the image below or the following link to see the **Tarzan Release** video: [youtube.com/watch?v=-Qv8Ri3dT0c](https://www.youtube.com/watch?v=-Qv8Ri3dT0c)
+
+[![Collider Creation](https://img.youtube.com/vi/-Qv8Ri3dT0c/0.jpg)](https://www.youtube.com/watch?v=-Qv8Ri3dT0c)
+
+
 Why?
 ----
 
